@@ -5,6 +5,7 @@
   "main": "./index.js",
   "scripts": {
     "generate": "node generate.mjs",
+    "build:ios": "pnpm generate && expo export --platform ios",
     "dev": "pnpm generate && expo start --dev-client --port 8088",
     "ios": "pnpm generate && expo run:ios --port 8088",
     "android": "pnpm generate && expo run:android --port 8088",
