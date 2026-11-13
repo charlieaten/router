@@ -107,3 +107,19 @@ test('Metro forwards cache context to the existing Babel transformer', () => {
   expect(before).not.toBe(after)
   expect(getCacheKey).toHaveBeenLastCalledWith({ revision: 'after' })
 })
+
+test('native discovery registers matching development identities without exposing handler-only functions', async () => {
+  const discovered = await discoverNativeServerFunctions({
+    root,
+    entries: ['src/native-entry.ts'],
+    mode: 'dev',
+  })
+  const functions = Object.entries(discovered.functions)
+  expect(functions.map(([, fn]) => fn.functionName)).toEqual([
+    'publicFn_createServerFn_handler',
+  ])
+  const identity = JSON.parse(
+    Buffer.from(functions[0]![0], 'base64url').toString('utf8'),
+  )
+  expect(identity.file).toBe('/src/native-entry.ts?tss-serverfn-split')
+})

@@ -814,3 +814,50 @@ it('uses a route-owned tabs host independently of the owning root stack kind', a
   expect(screen.getAllByTestId('native-tabs')).toHaveLength(1)
   router.history.destroy()
 })
+
+it('retargets a child navigation when any borrowed ancestor dependency changes', async () => {
+  const rootLoader = vi.fn(
+    ({ deps }: { deps: { tenant: string } }) => deps.tenant,
+  )
+  const root = createRootRoute({
+    component: Outlet,
+    validateSearch: (search) => ({ tenant: String(search.tenant ?? 'one') }),
+    loaderDeps: ({ search }) => ({ tenant: search.tenant }),
+    loader: rootLoader,
+  })
+  const parent = createRoute({
+    getParentRoute: () => root,
+    path: '/parent',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: (_match, location) => ({
+          initialContainer: 'child',
+          containers: {
+            child: { initialHref: `/parent/child${location.searchStr}` },
+          },
+        }),
+      },
+    },
+  })
+  const child = createRoute({
+    getParentRoute: () => parent,
+    path: '/child',
+    component: () => <p>Tenant {root.useLoaderData()}</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([parent.addChildren([child])]),
+    native: {
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/parent?tenant=one' } },
+    },
+  })
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Tenant one')
+  await act(() =>
+    router.navigate({ to: '/parent/child', search: { tenant: 'two' } }),
+  )
+  await screen.findByText('Tenant two')
+  expect(rootLoader).toHaveBeenCalledTimes(2)
+  router.history.destroy()
+})
