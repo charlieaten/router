@@ -232,3 +232,21 @@ it('serializes deeply nested ownership as objects with linear snapshot growth', 
   await expect(bounded.restore(serialized)).rejects.toThrow('entry limit')
   expect(bounded.getActiveEntry()?.href).toBe('/')
 })
+
+it('initializes an explicit destination in its selected child namespace atomically', async () => {
+  const navigation = createNavigation<string>({
+    initialContainer: 'feed',
+    initialLocation: { target: 'search', href: '/search/details' },
+    containers: {
+      feed: { initialHref: '/' },
+      search: { initialHref: '/search' },
+    },
+    prepare: async (entry) => ({ value: entry.href }),
+  })
+  await navigation.initialize()
+  expect(navigation.getSnapshot().selected).toBe('search')
+  expect(navigation.getActiveEntry()?.href).toBe('/search/details')
+  expect(
+    navigation.getSnapshot().stacks.search?.map((entry) => entry.href),
+  ).toEqual(['/search', '/search/details'])
+})
