@@ -14,6 +14,9 @@ const venues = [
   },
 ]
 
+// Demo storage only: survives requests, but not a server restart.
+const reviews = new Map<string, Array<{ id: string; body: string }>>()
+
 export function readVenues() {
   return venues
 }
@@ -23,5 +26,12 @@ export function readVenue(id: string) {
   if (!venue) {
     throw new Error('Venue not found')
   }
-  return venue
+  return { ...venue, reviews: reviews.get(id) ?? [] }
+}
+
+export function writeReview(venueId: string, body: string) {
+  readVenue(venueId)
+  const review = { id: crypto.randomUUID(), body }
+  reviews.set(venueId, [...(reviews.get(venueId) ?? []), review])
+  return review
 }

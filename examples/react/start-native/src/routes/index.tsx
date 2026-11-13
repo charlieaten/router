@@ -4,7 +4,8 @@ import { VenueList } from '../ui/venue-list'
 
 export const Route = createFileRoute('/')({
   staticData: { native: { title: 'Discover' } },
-  loader: () => listVenues(),
+  loader: ({ abortController }) =>
+    listVenues({ signal: abortController.signal }),
   component: Home,
 })
 

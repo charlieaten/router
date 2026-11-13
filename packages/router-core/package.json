@@ -179,6 +179,16 @@
         "types": "./dist/cjs/navigation.d.cts",
         "default": "./dist/cjs/navigation.cjs"
       }
+    },
+    "./execution-scope": {
+      "import": {
+        "types": "./dist/esm/execution-scope.d.ts",
+        "default": "./dist/esm/execution-scope.js"
+      },
+      "require": {
+        "types": "./dist/cjs/execution-scope.d.cts",
+        "default": "./dist/cjs/execution-scope.cjs"
+      }
     }
   },
   "sideEffects": false,

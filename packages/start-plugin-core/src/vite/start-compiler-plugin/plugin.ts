@@ -1,5 +1,6 @@
 import { VIRTUAL_MODULES } from '@tanstack/start-server-core/virtual-modules'
 import { resolve as resolvePath } from 'pathe'
+import { discoverNativeServerFunctions } from '../../metro'
 import {
   SERVER_FN_LOOKUP,
   TRANSFORM_ID_REGEX,
@@ -227,6 +228,7 @@ function parseIdQuery(id: string): {
 
 export interface StartCompilerPluginOptions {
   framework: CompileStartFrameworkOptions
+  nativeEntries?: Array<string>
   environments: Array<{
     name: string
     type: 'client' | 'server'
@@ -655,7 +657,7 @@ export function startCompilerPlugin(
       applyToEnvironment: (env) => {
         return appliedResolverEnvironments.has(env.name)
       },
-      load() {
+      async load() {
         if (this.environment.name !== opts.providerEnvName) {
           const mod = opts.environments.find(
             (e) => e.name === this.environment.name,
@@ -678,6 +680,17 @@ export function startCompilerPlugin(
         // When SSR is NOT the provider (custom provider env), server-only-referenced
         // functions ARE in the manifest and need the isClientReferenced check to
         // block direct client HTTP requests to server-only-referenced functions.
+        if (opts.nativeEntries?.length) {
+          const discovered = await discoverNativeServerFunctions({
+            root,
+            entries: opts.nativeEntries,
+            generateFunctionId: opts.generateFunctionId,
+          })
+          mergeServerFnsById(serverFnsById, discovered.functions)
+          for (const file of discovered.files) {
+            this.addWatchFile(file)
+          }
+        }
         return generateServerFnResolverModule({
           serverFnsById,
           includeClientReferencedCheck: !ssrIsProvider,

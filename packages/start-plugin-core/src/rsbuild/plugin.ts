@@ -2,6 +2,8 @@ import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { joinURL } from 'ufo'
+import { mergeServerFnsById } from '../start-compiler/host'
+import { discoverNativeServerFunctions } from '../metro'
 import {
   applyResolvedBaseAndOutput,
   applyResolvedRouterBasepath,
@@ -356,6 +358,18 @@ export function tanStackStartRsbuild(
         scriptFormat,
       })
       updateServerFnResolver = virtualModuleState.updateServerFnResolver
+      api.onBeforeBuild(async () => {
+        const entries = getConfig().startConfig.serverFns.nativeEntries
+        if (entries.length) {
+          const discovered = await discoverNativeServerFunctions({
+            root: resolvedStartConfig.root,
+            entries,
+            generateFunctionId: startPluginOpts.serverFns?.generateFunctionId,
+          })
+          mergeServerFnsById(serverFnsById, discovered.functions)
+          virtualModuleState.updateServerFnResolver()
+        }
+      })
 
       if (!rscEnabled) {
         api.modifyRspackConfig((config, utils) => {

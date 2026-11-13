@@ -1,13 +1,13 @@
-import * as React from 'react'
 import { useBlocker, useNavigation } from '@tanstack/react-router'
 import { Pressable, Text, TextInput, View } from 'react-native'
+import { useReviewComposer } from './use-review-composer'
 
-export function Composer() {
-  const [draft, setDraft] = React.useState('')
+export function Composer({ venueId }: { venueId: string }) {
+  const { draft, setDraft, saving, error, shouldBlock, save } =
+    useReviewComposer(venueId)
   const navigation = useNavigation()
   const blocker = useBlocker({
-    disabled: !draft.length,
-    shouldBlockFn: () => draft.length > 0,
+    shouldBlockFn: shouldBlock,
     withResolver: true,
   })
   return (
@@ -39,6 +39,18 @@ export function Composer() {
       <Pressable testID="leave-composer" onPress={() => void navigation.back()}>
         <Text>Close review</Text>
       </Pressable>
+      <Pressable
+        testID="save-review"
+        disabled={saving || !draft.trim()}
+        onPress={async () => {
+          if (await save()) {
+            await navigation.back()
+          }
+        }}
+      >
+        <Text>{saving ? 'Saving…' : 'Save review'}</Text>
+      </Pressable>
+      {error && <Text accessibilityRole="alert">{error}</Text>}
       {blocker.status === 'blocked' && (
         <View accessibilityRole="alert">
           <Text>Discard your unfinished review?</Text>

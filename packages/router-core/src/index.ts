@@ -277,6 +277,7 @@ export type {
   RouterContextOptions,
   RouterOptions,
   RouterConstructorOptions,
+  RouteTreeSource,
   UpdateFn,
   ParseLocationFn,
   InvalidateFn,

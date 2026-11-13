@@ -43,6 +43,7 @@ export default mergeConfig(
     entry: [
       './src/index.ts',
       './src/navigation.ts',
+      './src/execution-scope.ts',
       './src/ssr/client.ts',
       './src/ssr/server.ts',
       './src/scroll-restoration-script/client.ts',

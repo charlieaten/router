@@ -1,0 +1,22 @@
+[tools]
+node = "26.12.1"
+pnpm = "12.18.0"
+
+[tasks.native]
+description = "Run the Start backend and launch the iOS development client"
+depends = ["native:web", "native:ios"]
+
+[tasks."native:web"]
+description = "Run the shared Start web app and backend"
+depends = ["native:build"]
+run = "pnpm --filter tanstack-start-example-native dev"
+
+[tasks."native:ios"]
+description = "Run Metro and open the installed iOS development client"
+depends = ["native:build"]
+run = "pnpm --filter tanstack-start-native-client dev --ios"
+
+[tasks."native:build"]
+description = "Build the app's workspace dependencies"
+env = { CI = "1", NX_DAEMON = "false" }
+run = "pnpm exec nx run-many -p @tanstack/react-start @tanstack/router-generator @tanstack/react-router -t build --skipRemoteCache"

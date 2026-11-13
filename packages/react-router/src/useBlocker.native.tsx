@@ -1,9 +1,18 @@
 import * as React from 'react'
 import { entryContext, useNavigation } from './native/context'
-import type { UseBlockerOpts } from './blockerTypes'
+import type { AnyRouter, RegisteredRouter } from '@tanstack/router-core'
+import type {
+  BlockerResolver,
+  ShouldBlockFn,
+  UseBlockerOpts,
+} from './blockerTypes'
 import type { NativeEntry } from './native/controller'
 
-export type { UseBlockerOpts, ShouldBlockFn } from './blockerTypes'
+export type {
+  UseBlockerOpts,
+  ShouldBlockFn,
+  BlockerResolver,
+} from './blockerTypes'
 
 function location(entry: NativeEntry) {
   const state = entry.value.state
@@ -16,68 +25,89 @@ function location(entry: NativeEntry) {
     search: match.search,
   }
 }
+const idle = {
+  status: 'idle',
+  current: undefined,
+  next: undefined,
+  action: undefined,
+  proceed: undefined,
+  reset: undefined,
+} as const
 
-type Resolver = {
-  status: 'idle' | 'blocked'
-  proceed: (() => void) | undefined
-  reset: (() => void) | undefined
-}
-
-export function useBlocker(options: UseBlockerOpts) {
+export function useBlocker<
+  TRouter extends AnyRouter = RegisteredRouter,
+  TWithResolver extends boolean = false,
+>(
+  options: UseBlockerOpts<TRouter, TWithResolver>,
+): TWithResolver extends true ? BlockerResolver<TRouter> : void {
   const optionsRef = React.useRef(options)
   optionsRef.current = options
   const disabled = options.disabled
   const entry = React.useContext(entryContext)
   const navigation = useNavigation()
-  const [resolver, setResolver] = React.useState<Resolver>({
-    status: 'idle',
-    proceed: undefined,
-    reset: undefined,
-  })
+  const [resolver, setResolver] = React.useState<BlockerResolver<TRouter>>(idle)
+  const pending = React.useRef<
+    { finish: (blocked: boolean) => void } | undefined
+  >(undefined)
   React.useEffect(() => {
     if (!entry || disabled) {
       return
     }
-    return navigation.block(entry.key, async (change) => {
+    let registered = true
+    const unblock = navigation.block(entry.key, async (change) => {
       const options = optionsRef.current
       const next = navigation.getActiveEntry(change.next)
-      const shouldBlock = await options.shouldBlockFn({
+      const args = {
         current: location(entry),
-        next: next ? location(next) : location(entry),
-        action: change.action === 'back' ? 'BACK' : 'REPLACE',
-      } as never)
-      if (change.signal.aborted) {
+        next: location(next ?? entry),
+        action: change.historyAction,
+      } as Parameters<ShouldBlockFn<TRouter>>[0]
+      const shouldBlock = await options.shouldBlockFn(args)
+      if (change.signal.aborted || !registered) {
         return true
       }
       if (!shouldBlock || !options.withResolver) {
         return shouldBlock
       }
-      const blocked = await new Promise<boolean>((resolve) => {
-        const abort = () => finish(true)
-        const finish = (value: boolean) => {
-          change.signal.removeEventListener('abort', abort)
-          resolve(value)
+      return new Promise<boolean>((resolve) => {
+        const abort = () => ticket.finish(true)
+        const ticket = {
+          finish: (blocked: boolean) => {
+            change.signal.removeEventListener('abort', abort)
+            if (pending.current === ticket) {
+              pending.current = undefined
+              setResolver(idle)
+            }
+            resolve(blocked)
+          },
         }
+        pending.current = ticket
         change.signal.addEventListener('abort', abort, { once: true })
         setResolver({
           status: 'blocked',
-          proceed: () => finish(false),
-          reset: () => finish(true),
+          ...args,
+          proceed: () => ticket.finish(false),
+          reset: () => ticket.finish(true),
         })
       })
-      setResolver({ status: 'idle', proceed: undefined, reset: undefined })
-      return blocked
     })
+    return () => {
+      registered = false
+      pending.current?.finish(true)
+      unblock()
+    }
   }, [entry, navigation, disabled])
-  return resolver
+  return (
+    options.withResolver ? resolver : undefined
+  ) as TWithResolver extends true ? BlockerResolver<TRouter> : void
 }
 
 export function Block({
   children,
   ...options
 }: UseBlockerOpts & {
-  children?: React.ReactNode | ((resolver: Resolver) => React.ReactNode)
+  children?: React.ReactNode | ((resolver: BlockerResolver) => React.ReactNode)
 }) {
-  const resolver = useBlocker(options)
+  const resolver = useBlocker({ ...options, withResolver: true })
   return typeof children === 'function' ? children(resolver) : children
 }

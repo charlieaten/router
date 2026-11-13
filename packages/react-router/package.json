@@ -40,7 +40,7 @@
     "test:perf": "vitest bench",
     "test:perf:dev": "pnpm run test:perf --watch --hideSkippedTests",
     "test:build": "publint --strict && attw --ignore-rules no-resolution --pack .",
-    "build": "vite build && tsc6 --project tsconfig.native.build.json",
+    "build": "vite build && vite build --config vite.native.build.config.ts && tsc6 --project tsconfig.native.build.json && node scripts/native-declarations.mjs",
     "test:perf:native": "vitest bench --mode benchmark --config vite.native.config.ts tests/native-navigation.bench.tsx"
   },
   "type": "module",
@@ -50,8 +50,8 @@
   "exports": {
     ".": {
       "react-native": {
-        "types": "./dist/native/index.native.d.ts",
-        "default": "./src/index.native.tsx"
+        "types": "./dist/native/esm/index.native.d.ts",
+        "default": "./dist/native/esm/index.native.js"
       },
       "react-server": {
         "types": "./dist/esm/index.rsc.d.ts",

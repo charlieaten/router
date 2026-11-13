@@ -78,7 +78,19 @@
         "default": "./dist/esm/hydration/runtime.js"
       }
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./native": {
+      "import": {
+        "types": "./dist/esm/native.d.ts",
+        "default": "./dist/esm/native.js"
+      }
+    },
+    "./native-client-rpc": {
+      "import": {
+        "types": "./dist/esm/client-rpc/native.d.ts",
+        "default": "./dist/esm/client-rpc/native.js"
+      }
+    }
   },
   "imports": {
     "#tanstack-start-entry": {

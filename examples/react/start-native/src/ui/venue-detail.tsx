@@ -64,7 +64,9 @@ export function VenueDetail({
           onChange={(event) => setNote(event.target.value)}
           placeholder="A reason to come back…"
         />
-        <Link to="/compose" className="primary">
+        {section === 'reviews' &&
+          venue.reviews.map((review) => <p key={review.id}>{review.body}</p>)}
+        <Link to="/compose" search={{ venueId: venue.id }} className="primary">
           Write a review ↗
         </Link>
       </div>

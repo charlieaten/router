@@ -72,12 +72,17 @@ export function VenueDetail({
       </Link>
       <Link
         to="/compose"
+        search={{ venueId: venue.id }}
         target="composer"
         testID="open-composer"
         style={{ backgroundColor: '#203d32', padding: 18, borderRadius: 12 }}
       >
         <Text style={{ color: '#fff' }}>Write a review ↗</Text>
       </Link>
+      {section === 'reviews' &&
+        venue.reviews.map((review) => (
+          <Text key={review.id}>{review.body}</Text>
+        ))}
       <Pressable testID="back" onPress={() => void navigation.back()}>
         <Text style={{ color: '#203d32' }}>← Back</Text>
       </Pressable>

@@ -247,6 +247,7 @@ export const tanstackStartOptionsObjectSchema = z.object({
   serverFns: z
     .object({
       base: z.string().optional().default('/_serverFn'),
+      nativeEntries: z.array(z.string()).optional().default([]),
       disableCsrfMiddlewareWarning: z.boolean().optional().default(false),
       generateFunctionId: z
         .custom<

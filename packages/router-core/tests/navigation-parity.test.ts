@@ -156,3 +156,41 @@ it('honors a nested tab navigator back behavior before bubbling to its parent', 
   expect(nav.getActiveEntry()?.href).toBe('/')
   expect(nav.canGoBack()).toBe(false)
 })
+
+it('does not reinterpret a nested none back behavior as root leaf history', async () => {
+  const nav = createNavigation({
+    initialContainer: 'app',
+    backBehavior: 'history',
+    containers: {
+      app: { kind: 'tabs', initialChild: 'feed', backBehavior: 'none' },
+      feed: { parent: 'app', initialHref: '/' },
+      saved: { parent: 'app', initialHref: '/saved' },
+    },
+    prepare: async (entry) => ({ value: entry.href }),
+  })
+  await nav.initialize()
+  await nav.select('saved')
+  expect(nav.canGoBack()).toBe(false)
+})
+
+it('restores flat legacy tab back history without childHistory metadata', async () => {
+  const options = {
+    initialContainer: 'feed',
+    backBehavior: 'history' as const,
+    containers: {
+      feed: { initialHref: '/' },
+      search: { initialHref: '/search' },
+    },
+    prepare: async (entry: { href: string }) => ({ value: entry.href }),
+  }
+  const nav = createNavigation(options)
+  await nav.initialize()
+  await nav.select('search')
+  const data = JSON.parse(nav.serialize())
+  data.version = 2
+  delete data.childHistory
+  const restored = createNavigation(options)
+  await restored.restore(JSON.stringify(data))
+  expect(await restored.back()).toBe(true)
+  expect(restored.getActiveEntry()?.href).toBe('/')
+})
