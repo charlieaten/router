@@ -15,7 +15,11 @@ const config = defineConfig({
   test: {
     name: packageJson.name,
     dir: './tests',
-    exclude: [...configDefaults.exclude, '**/native*.tsx'],
+    exclude: [
+      ...configDefaults.exclude,
+      '**/native*.tsx',
+      '**/native*.test.ts',
+    ],
     watch: false,
     environment: 'jsdom',
     typecheck: { enabled: true },

@@ -24,6 +24,7 @@ for (const retained of [0, 100, 1000]) {
         'other',
         Array.from({ length: retained }, (_, i) => `/item/${i}`),
       )
+      await navigation.select('main')
     }
     const original = navigation.getActiveEntry()
     const tick = async () => {
