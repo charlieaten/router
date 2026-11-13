@@ -157,7 +157,7 @@ export function setupScrollRestoration(router: AnyRouter, force?: boolean) {
     scroll.e = true
   }
 
-  if (isServer ?? router.isServer) {
+  if ((isServer ?? router.isServer) || typeof document === 'undefined') {
     return
   }
 

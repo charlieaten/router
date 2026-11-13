@@ -1,0 +1,30 @@
+{
+  "name": "tanstack-start-native-client",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "dev": "pnpm generate && expo start --dev-client --port 8088",
+    "ios": "pnpm generate && expo run:ios --port 8088",
+    "android": "pnpm generate && expo run:android --port 8088",
+    "test:types": "tsc --noEmit -p ../tsconfig.native.json"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.170.46",
+    "expo": "58.0.24",
+    "expo-dev-client": "58.0.19",
+    "react-native": "0.88.1",
+    "react-native-screens": "5.0.0-beta.1",
+    "react-native-safe-area-context": "~5.11.1",
+    "react": "19.3.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@tanstack/router-generator": "^1.166.7",
+    "@types/react": "^19.2.8",
+    "babel-preset-expo": "~58.0.25",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  }
+}

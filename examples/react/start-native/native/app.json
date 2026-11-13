@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "TanStack Native Lab",
+    "slug": "tanstack-native-lab",
+    "scheme": "tanstack-native-lab",
+    "ios": {
+      "bundleIdentifier": "dev.tanstack.nativelab"
+    },
+    "android": {
+      "package": "dev.tanstack.nativelab"
+    },
+    "plugins": ["expo-dev-client"]
+  }
+}

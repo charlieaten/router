@@ -43,6 +43,16 @@
     "buildProduction": ["sharedGlobals", "{projectRoot}/**/*"]
   },
   "targetDefaults": {
+    "test:unit:native": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": ["default", "^production", "dependentTaskOutputs"]
+    },
+    "test:types:native": {
+      "dependsOn": ["^build", "build"],
+      "cache": true,
+      "inputs": ["default", "^production", "dependentTaskOutputs"]
+    },
     "test:docs": {
       "cache": true,
       "inputs": ["sharedGlobals", "{workspaceRoot}/docs/**/*"]
@@ -152,6 +162,13 @@
     },
     "test:e2e*": {
       "parallelism": false
+    },
+    "test:perf:native": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "test:perf:navigation": {
+      "cache": false
     }
   },
   "plugins": [

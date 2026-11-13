@@ -1,0 +1,18 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { listVenues } from '../data'
+import { VenueList } from '../ui/venue-list'
+
+export const Route = createFileRoute('/')({
+  staticData: { native: { title: 'Discover' } },
+  loader: () => listVenues(),
+  component: Home,
+})
+
+function Home() {
+  return (
+    <VenueList
+      venues={Route.useLoaderData()}
+      title="Somewhere worth staying."
+    />
+  )
+}

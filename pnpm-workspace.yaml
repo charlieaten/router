@@ -17,6 +17,7 @@ packages:
   - 'benchmarks/*'
   - 'benchmarks/memory/*'
   - 'examples/react/*'
+  - 'examples/react/start-native/native'
   - 'examples/solid/*'
   - 'examples/vue/*'
   - 'examples/react/router-monorepo-react-query/packages/*'
@@ -72,6 +73,7 @@ catalog:
   '@tanstack/vue-query': ^5.102.0
 
 overrides:
+  'tanstack-start-native-client>react': '19.3.0'
   '@types/babel__traverse': '^7.28.0'
   vite-plugin-dts: 4.2.3
   solid-js: 'catalog:'

@@ -13,6 +13,7 @@ export default [
     files: ['src/**/*.{ts,tsx}', 'tests/**/*.{ts,tsx}'],
   },
   {
+    languageOptions: { parserOptions: { project: ['./tsconfig.eslint.json'] } },
     plugins: {
       'react-hooks': pluginReactHooks,
       '@eslint-react': pluginReact,
