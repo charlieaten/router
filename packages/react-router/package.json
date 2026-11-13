@@ -146,5 +146,15 @@
     "react-dom": {
       "optional": true
     }
+  },
+  "nx": {
+    "targets": {
+      "test:unit:native": {
+        "dependsOn": [
+          "^build",
+          "build"
+        ]
+      }
+    }
   }
 }
