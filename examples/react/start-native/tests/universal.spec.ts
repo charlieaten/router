@@ -82,3 +82,22 @@ test('saves a review through Start RPC and refreshes venue data', async ({
   await expect(page).toHaveURL(/venues\/123\?section=reviews/)
   await expect(page.getByText(review, { exact: true })).toBeVisible()
 })
+
+test('keeps a workspace parent mounted while navigating its shared child routes on web', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/Fieldnotes/feed/1')
+  await expect(
+    page.getByRole('heading', { name: 'Workspace Fieldnotes', exact: true }),
+  ).toBeVisible()
+  await page
+    .getByRole('button', { name: 'Parent counter: 0', exact: true })
+    .click()
+  await page.getByRole('link', { name: 'Push page 2', exact: true }).click()
+  await expect(
+    page.getByRole('heading', { name: 'feed · Page 2', exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Parent counter: 1', exact: true }),
+  ).toBeVisible()
+})
