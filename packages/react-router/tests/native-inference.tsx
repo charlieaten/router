@@ -1,13 +1,14 @@
 import { expectTypeOf } from 'vitest'
 import {
   Link,
-  createRootRoute,
+  RouterProvider,
+  createRootRouteWithContext,
   createRoute,
   createRouter,
   linkOptions,
-} from '../dist/native/index.native'
+} from '@tanstack/react-router'
 
-const root = createRootRoute()
+const root = createRootRouteWithContext<{ session: string }>()({})
 const venue = createRoute({
   getParentRoute: () => root,
   path: 'venues/$id',
@@ -17,7 +18,18 @@ const venue = createRoute({
   }),
   loader: ({ params }) => ({ id: params.id, title: 'A venue' }),
 })
-const router = createRouter({ routeTree: root.addChildren([venue]) })
+const router = createRouter({
+  routeTree: root.addChildren([venue]),
+  context: { session: 'native' },
+})
+
+function TypedNativeProvider() {
+  // @ts-expect-error -- provider context retains the route tree's inferred type
+  const invalid = <RouterProvider router={router} context={{ session: 123 }} />
+  return (
+    <RouterProvider router={router} context={{ session: 'authenticated' }} />
+  )
+}
 
 declare module '@tanstack/router-core' {
   interface Register {

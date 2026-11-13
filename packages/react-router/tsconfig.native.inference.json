@@ -1,4 +1,7 @@
 {
   "extends": "./tsconfig.native.json",
-  "include": ["tests/native-inference.tsx"]
+  "include": ["tests/native-inference.tsx"],
+  "compilerOptions": {
+    "moduleSuffixes": [""]
+  }
 }

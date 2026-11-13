@@ -3,7 +3,46 @@ import { createRootRoute, createRoute } from '../src/route'
 import { createRouter } from '../src/router.native'
 import { getNativeNavigation } from '../src/native/controller'
 
-for (const count of [100, 1000]) {
+for (const count of [10, 100, 1000]) {
+  test(`retained screen lookup with ${count} active visits`, async ({
+    bench,
+  }) => {
+    const entries = Array.from({ length: count }, (_, index) => ({
+      key: `entry-${index}`,
+    }))
+    const retained = [...entries, { key: 'outgoing' }]
+    const findEach = () =>
+      retained.map((entry) =>
+        entries.findIndex((item) => item.key === entry.key),
+      )
+    const indexOnce = () => {
+      const indexes = new Map(entries.map((entry, index) => [entry.key, index]))
+      return retained.map((entry) => indexes.get(entry.key) ?? -1)
+    }
+    expect(indexOnce()).toEqual(findEach())
+    for (const [name, run] of [
+      ['find each', findEach],
+      ['index once', indexOnce],
+    ] as const) {
+      const result = await bench(name, run).run({
+        time: 500,
+        warmupIterations: 20,
+      })
+      console.log(
+        JSON.stringify({
+          count,
+          name,
+          meanMs: result.latency.mean,
+          p99Ms: result.latency.p99,
+          rme: result.latency.rme,
+          samples: result.latency.samplesCount,
+        }),
+      )
+    }
+  })
+}
+
+for (const count of [100, 1000, 10000]) {
   test(`native execution scope preparation with ${count} routes`, async ({
     bench,
   }) => {

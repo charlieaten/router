@@ -13,6 +13,7 @@ test.each(['onLeave', 'onEnter', 'onStay'] as const)(
       status: 'success',
     })) as Array<AnyRouteMatch>
     const router = {
+      options: {},
       _tx: owner,
       routesById: Object.fromEntries(
         matches.map(({ routeId }) => [
@@ -56,6 +57,7 @@ test('saved fallback membership survives statuses changing before dispatch', () 
     status: 'success' as const,
   }))
   const router = {
+    options: {},
     routesById: Object.fromEntries(
       matches.map(({ routeId }) => [
         routeId,

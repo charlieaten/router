@@ -22,6 +22,9 @@ export default defineConfig({
     name: 'native-router',
     watch: false,
     environment: 'jsdom',
-    include: ['tests/native-navigation.test.tsx'],
+    include: [
+      'tests/native-navigation.test.tsx',
+      'tests/native-persistence.test.ts',
+    ],
   },
 })
