@@ -146,3 +146,70 @@ for (const depth of [1, 5, 15]) {
     navigation.dispose()
   })
 }
+
+for (const count of [10, 100, 1000]) {
+  test(`descendant blocker ownership across ${count} parent visits`, async ({
+    bench,
+    skip,
+  }) => {
+    const navigation = createNavigation<string>({
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/' } },
+      prepare: async (entry) => ({ value: entry.href }),
+      getNavigator: (entry) =>
+        entry.href.startsWith('/workspace/')
+          ? {
+              initialContainer: 'child',
+              containers: {
+                child: {
+                  initialHref: `/child/${entry.href.split('/').at(-1)}`,
+                },
+              },
+            }
+          : undefined,
+    })
+    if (!('getOwner' in navigation)) {
+      skip()
+      return
+    }
+    await navigation.reset(
+      'main',
+      Array.from({ length: count }, (_, index) => `/workspace/${index}`),
+    )
+    const entries = navigation.getSnapshot().stacks.main!
+    const unblocks = entries.map((entry) =>
+      entry.navigator!.block(
+        entry.navigator!.getActiveEntry()!.key,
+        () => true,
+      ),
+    )
+    const query = () => {
+      let found = 0
+      for (const entry of entries) {
+        if (navigation.isRemovalBlocked(entry.key)) {
+          found++
+        }
+      }
+      return found
+    }
+    expect(query()).toBe(count)
+    const result = await bench(`descendant-blockers-${count}`, query).run({
+      time: 600,
+      warmupIterations: 20,
+    })
+    console.log(
+      JSON.stringify({
+        name: result.name,
+        meanMs: result.latency.mean,
+        p99Ms: result.latency.p99,
+        rme: result.latency.rme,
+        samples: result.latency.samplesCount,
+      }),
+    )
+    for (const unblock of unblocks) {
+      unblock()
+    }
+    expect(query()).toBe(0)
+    navigation.dispose()
+  })
+}
