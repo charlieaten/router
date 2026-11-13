@@ -217,7 +217,7 @@ export async function discoverNativeServerFunctions(
         createNativeStartCompiler({
           ...options,
           platform,
-          mode: 'build',
+          mode: options.mode ?? 'build',
         }).discover(options.entries),
     ),
   )

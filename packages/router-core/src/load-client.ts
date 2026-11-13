@@ -1323,6 +1323,9 @@ async function executeClientLane(
   matches: Array<AnyRouteMatch>,
   options: ExecuteLaneOptions,
 ): Promise<LaneResult> {
+  if (router._execution) {
+    options[6 /* resolvedPrefix */] = router._execution.prepare(matches)
+  }
   const matched = [location, matches as Array<WorkMatch>] as MatchedLane
   const signal = options[0 /* controller */].signal
   let reduced: ReducedLane | ControlOutcome
@@ -1457,9 +1460,11 @@ async function executeClientLane(
     router,
     reduced,
     signal,
-    options[6 /* resolvedPrefix */] === matches.length
+    router._execution
       ? options[6 /* resolvedPrefix */]
-      : 0,
+      : options[6 /* resolvedPrefix */] === matches.length
+        ? options[6 /* resolvedPrefix */]
+        : 0,
   )
 }
 
@@ -1733,6 +1738,11 @@ function followRedirect(
       replace: true,
       ignoreBlocker: true,
     } as any)
+  }
+  if (router._execution && !router._execution.accepts(location)) {
+    // A bounded child cannot commit a destination owned by an ancestor.
+    // Let its presentation transaction dispose the candidate and retarget.
+    throw outcome[1 /* redirect */]
   }
   if (options.reloadDocument) {
     return router.navigate({

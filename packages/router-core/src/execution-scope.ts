@@ -1,6 +1,7 @@
 import { lifecycleEnd, runRouteLifecycle } from './router'
 import { disposeClientExecution } from './load-client'
 import type { AnyRouter, RouteTreeSource } from './router'
+import type { AnyRouteMatch } from './Matches'
 
 /** Native executions may share matching metadata, never request or view state. */
 export function createRouteTreeSource(source: AnyRouter): RouteTreeSource {
@@ -33,10 +34,121 @@ const lifecycleOwners = new WeakMap<
 
 export function createRouterExecutionScope<T extends AnyRouter>(
   create: () => T,
-  options?: { deferLifecycle?: boolean },
+  options?: {
+    deferLifecycle?: boolean
+    endRouteId?: string
+    parent?: {
+      scope: {
+        router: AnyRouter
+        isDisposed: boolean
+        retain: () => () => void
+      }
+      routeId: string
+    }
+  },
 ) {
   const router = create()
   let disposed = false
+  let leases = 0
+  let released = false
+  const releaseParent = options?.parent?.scope.retain()
+  const matchRoutes = router.matchRoutes.bind(router)
+  if (options?.endRouteId || options?.parent) {
+    router.matchRoutes = ((...args: Parameters<T['matchRoutes']>) => {
+      const matches = matchRoutes(args[0], args[1], args[2])
+      if (options.endRouteId) {
+        const end = matches.findIndex(
+          (match) => match.routeId === options.endRouteId,
+        )
+        if (end < 0) {
+          throw new Error('Destination left its route execution boundary')
+        }
+        matches.splice(end + 1)
+        // An outlet boundary intentionally stops before matching its child.
+        // Missing descendants belong to that child execution, not this prefix.
+        for (const match of matches) {
+          match._notFound = undefined
+        }
+      }
+      return matches
+    }) as T['matchRoutes']
+    router._execution = {
+      accepts(location) {
+        const matches = matchRoutes(location)
+        if (
+          options.endRouteId &&
+          !matches.some((match) => match.routeId === options.endRouteId)
+        ) {
+          return false
+        }
+        const parent = options.parent
+        if (parent) {
+          const end =
+            parent.scope.router.state.matches.findIndex(
+              (match) => match.routeId === parent.routeId,
+            ) + 1
+          return (
+            !!end &&
+            parent.scope.router.state.matches
+              .slice(0, end)
+              .every((match, index) => matches[index]?.id === match.id)
+          )
+        }
+        return true
+      },
+      start: options.parent
+        ? options.parent.scope.router.state.matches.findIndex(
+            (match) => match.routeId === options.parent!.routeId,
+          ) + 1
+        : 0,
+      prepare(matches: Array<AnyRouteMatch>) {
+        const parent = options.parent
+        if (!parent) {
+          return 0
+        }
+        const ancestors = parent.scope.router.state.matches
+        const end =
+          ancestors.findIndex((match) => match.routeId === parent.routeId) + 1
+        if (!end || parent.scope.isDisposed) {
+          throw new Error('Parent route execution is unavailable')
+        }
+        for (let index = 0; index < end; index++) {
+          const ancestor = ancestors[index]!
+          const candidate = matches[index]
+          if (
+            !candidate ||
+            candidate.id !== ancestor.id ||
+            ancestor.status !== 'success'
+          ) {
+            throw new Error('Destination left its parent route execution')
+          }
+          // Borrow data/context, never a loader flight or its abort controller.
+          matches[index] = {
+            ...ancestor,
+            abortController: candidate.abortController,
+            _flight: undefined,
+          } as AnyRouteMatch
+        }
+        return end
+      },
+    }
+  }
+  const finish = () => {
+    if (!disposed || leases || released) {
+      return
+    }
+    released = true
+    activation?.abort()
+    try {
+      disposeClientExecution(
+        router,
+        lifecycle === 'automatic' || lifecycle === 'active',
+      )
+    } finally {
+      lifecycleOwners.delete(router)
+      releaseParent?.()
+    }
+  }
   let activation: AbortController | undefined
   let lifecycle: 'automatic' | 'deferred' | 'active' | 'transferred' =
     options?.deferLifecycle ? 'deferred' : 'automatic'
@@ -78,6 +190,20 @@ export function createRouterExecutionScope<T extends AnyRouter>(
   }) as T['preloadRoute']
   const scope = {
     router,
+    retain() {
+      if (disposed) {
+        throw new Error('Router execution scope is disposed')
+      }
+      leases++
+      let live = true
+      return () => {
+        if (live) {
+          live = false
+          leases--
+          finish()
+        }
+      }
+    },
     get isDisposed() {
       return disposed
     },
@@ -135,12 +261,7 @@ export function createRouterExecutionScope<T extends AnyRouter>(
         return
       }
       disposed = true
-      activation?.abort()
-      disposeClientExecution(
-        router,
-        lifecycle === 'automatic' || lifecycle === 'active',
-      )
-      lifecycleOwners.delete(router)
+      finish()
     },
   }
   return scope

@@ -19,9 +19,11 @@ import {
 import { Matches } from './Matches'
 import { RouterContextProvider } from './RouterProviderShared'
 import { entryContext } from './native/context'
+import { nativeOutletContext } from './native/outlet-context'
 import {
   emitNativeNavigationEvent,
   flushNativeNavigation,
+  getEntryNavigatorOptions,
   getNativeNavigation,
   getScreenOptions,
 } from './native/controller'
@@ -35,11 +37,31 @@ import type {
 } from './native/controller'
 
 function Entry({ entry, active }: { entry: NativeEntry; active: boolean }) {
+  const owner = getNativeNavigation(entry.value).getOwner()
+  const definition = getEntryNavigatorOptions(entry)
+  const nested =
+    entry.navigator && definition
+      ? {
+          routeId: entry.value.state.matches.at(-1)!.routeId,
+          content: (
+            <NavigationSurface
+              router={entry.value}
+              navigation={entry.navigator}
+              config={{ ...entry.value.options.native!, ...definition }}
+              selected={active}
+            />
+          ),
+        }
+      : undefined
   return (
     <React.Activity mode={active ? 'visible' : 'hidden'}>
       <entryContext.Provider value={entry}>
         <RouterContextProvider router={entry.value}>
-          <Matches />
+          <nativeOutletContext.Provider value={nested}>
+            <Matches
+              afterRouteId={owner?.entry.value.state.matches.at(-1)?.routeId}
+            />
+          </nativeOutletContext.Provider>
         </RouterContextProvider>
       </entryContext.Provider>
     </React.Activity>
@@ -301,19 +323,21 @@ function DrawerHost(props: NativeContainerRenderProps) {
 function NativeContainer({
   id,
   router,
+  config = router.options.native!,
   navigation,
   state,
   selected,
   onError,
 }: {
   id?: string
+  config?: NonNullable<AnyRouter['options']['native']>
   router: AnyRouter
   navigation: NativeNavigation
   state: NavigationSnapshot<AnyRouter>
   selected: boolean
   onError: (error: unknown) => void
 }) {
-  const definitions = router.options.native!.containers
+  const definitions = config.containers
   const children = navigation.getChildren(id)
   if (id && !children.length) {
     return (
@@ -326,8 +350,7 @@ function NativeContainer({
     )
   }
   const selectedChild = id ? state.selectedChildren[id]! : state.selected
-  const kind =
-    (id ? definitions[id]?.kind : router.options.native?.rootKind) ?? 'tabs'
+  const kind = (id ? definitions[id]?.kind : config.rootKind) ?? 'tabs'
   const ordered =
     kind === 'stack'
       ? (state.childHistory[id ?? '$root'] ?? [selectedChild])
@@ -352,6 +375,7 @@ function NativeContainer({
     content: (
       <NativeContainer
         id={key}
+        config={config}
         router={router}
         navigation={navigation}
         state={state}
@@ -373,7 +397,7 @@ function NativeContainer({
       void navigation.setDrawerOpen(id ?? '$root', open).catch(onError)
     },
   }
-  const Custom = router.options.native?.renderContainer
+  const Custom = config.renderContainer
   if (Custom) {
     return <Custom {...props} />
   }
@@ -425,9 +449,11 @@ function retainOverlay(item: Overlay) {
 function NativeOverlays({
   items,
   router,
+  config,
   navigation,
   onError,
 }: {
+  config: NonNullable<AnyRouter['options']['native']>
   items: Array<Overlay>
   router: AnyRouter
   navigation: NativeNavigation
@@ -459,7 +485,7 @@ function NativeOverlays({
       .some((entry) => {
         let id = entry.container
         while (id !== item.id) {
-          const parent = router.options.native!.containers[id]?.parent
+          const parent = config.containers[id]?.parent
           if (!parent) {
             return false
           }
@@ -471,6 +497,7 @@ function NativeOverlays({
       <View style={{ flex: 1 }}>
         <NativeContainer
           id={item.id}
+          config={config}
           router={router}
           navigation={navigation}
           state={active?.state ?? item.state}
@@ -558,16 +585,60 @@ function NativeOverlays({
   return render(0)
 }
 
-export function RouterProvider<
-  TRouter extends AnyRouter = RegisteredRouter,
-  TDehydrated extends Record<string, any> = Record<string, any>,
->({ router, ...rest }: RouterProps<TRouter, TDehydrated>) {
-  const navigation = getNativeNavigation(router)
+function NavigationSurface({
+  router,
+  navigation,
+  config,
+  selected = true,
+}: {
+  router: AnyRouter
+  navigation: NativeNavigation
+  config: NonNullable<AnyRouter['options']['native']>
+  selected?: boolean
+}) {
   const state = React.useSyncExternalStore(
     navigation.subscribe,
     navigation.getSnapshot,
     navigation.getSnapshot,
   )
+  const [error, setError] = React.useState<unknown>()
+  if (error) {
+    throw error
+  }
+  const overlays: Array<Overlay> = state.overlays.flatMap((id) => {
+    let container = id
+    while (navigation.getChildren(container).length) {
+      container = state.selectedChildren[container]!
+    }
+    const entry = state.stacks[container]![0]
+    return entry ? [{ key: id, id, container, entry, state }] : []
+  })
+  return (
+    <View style={{ flex: 1 }}>
+      <NativeContainer
+        router={router}
+        config={config}
+        navigation={navigation}
+        state={state}
+        selected={selected}
+        onError={setError}
+      />
+      <NativeOverlays
+        items={overlays}
+        config={config}
+        router={router}
+        navigation={navigation}
+        onError={setError}
+      />
+    </View>
+  )
+}
+
+export function RouterProvider<
+  TRouter extends AnyRouter = RegisteredRouter,
+  TDehydrated extends Record<string, any> = Record<string, any>,
+>({ router, ...rest }: RouterProps<TRouter, TDehydrated>) {
+  const navigation = getNativeNavigation(router)
   const [error, setError] = React.useState<unknown>()
   React.useEffect(() => {
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -624,32 +695,14 @@ export function RouterProvider<
       </Text>
     )
   }
-  const overlays: Array<Overlay> = state.overlays.flatMap((id) => {
-    let container = id
-    while (navigation.getChildren(container).length) {
-      container = state.selectedChildren[container]!
-    }
-    const entry = state.stacks[container]![0]
-    return entry ? [{ key: id, id, container, entry, state }] : []
-  })
   return (
     <RouterContextProvider router={router} {...rest}>
       <ContainedModalProvider containerId="tanstack-root" style={{ flex: 1 }}>
-        <View style={{ flex: 1 }}>
-          <NativeContainer
-            router={router}
-            navigation={navigation}
-            state={state}
-            selected
-            onError={setError}
-          />
-          <NativeOverlays
-            items={overlays}
-            router={router}
-            navigation={navigation}
-            onError={setError}
-          />
-        </View>
+        <NavigationSurface
+          router={router}
+          navigation={navigation}
+          config={router.options.native!}
+        />
       </ContainedModalProvider>
     </RouterContextProvider>
   )

@@ -11,6 +11,7 @@ import { useLayoutEffect } from './utils'
 import { Transitioner, settleOwner } from './Transitioner'
 import { matchContext } from './matchContext'
 import { Match, renderPending } from './Match'
+import { renderRouteNotFound } from './renderRouteNotFound'
 import type {
   StructuralSharingOption,
   ValidateSelected,
@@ -44,7 +45,7 @@ declare module '@tanstack/router-core' {
  * Internal component that renders the router's active match tree with
  * suspense, error, and not-found boundaries. Rendered by `RouterProvider`.
  */
-export function Matches() {
+export function Matches({ afterRouteId }: { afterRouteId?: string } = {}) {
   const router = useRouter()
   const rootRoute: AnyRoute = router.routesById[rootRouteId]
 
@@ -63,10 +64,10 @@ export function Matches() {
         />
       )}
       {(isServer ?? router.isServer) || router.ssr ? (
-        <MatchesInner />
+        <MatchesInner afterRouteId={afterRouteId} />
       ) : (
         <React.Suspense fallback={pendingElement}>
-          <MatchesInner />
+          <MatchesInner afterRouteId={afterRouteId} />
         </React.Suspense>
       )}
     </>
@@ -79,7 +80,7 @@ export function Matches() {
   )
 }
 
-function MatchesInner() {
+function MatchesInner({ afterRouteId }: { afterRouteId?: string }) {
   const router = useRouter()
   const acknowledgement = router._rendered!
   const matches =
@@ -90,7 +91,11 @@ function MatchesInner() {
           router.stores.matches,
           (value) => acknowledgement[0 /* offered */] ?? value,
         )
-  const match = matches[0]
+  const parentIndex = afterRouteId
+    ? matches.findIndex((match) => match.routeId === afterRouteId)
+    : -1
+  const match =
+    afterRouteId && parentIndex < 0 ? undefined : matches[parentIndex + 1]
   const routeId = match?.routeId
 
   useLayoutEffect(() => {
@@ -99,7 +104,29 @@ function MatchesInner() {
     }
   }, [acknowledgement, matches])
 
-  const matchComponent = routeId ? <Match routeId={routeId} /> : null
+  const boundary = afterRouteId
+    ? matches
+        .slice(0, parentIndex + 1)
+        .find(
+          (match) =>
+            match._notFound ||
+            match.status === 'notFound' ||
+            match.status === 'error',
+        )
+    : undefined
+  const matchComponent = boundary ? (
+    boundary._notFound || boundary.status === 'notFound' ? (
+      renderRouteNotFound(
+        router,
+        router.routesById[boundary.routeId],
+        boundary.error,
+      )
+    ) : (
+      <Match routeId={boundary.routeId} />
+    )
+  ) : routeId ? (
+    <Match routeId={routeId} />
+  ) : null
 
   return router.options.disableGlobalCatchBoundary ? (
     matchComponent

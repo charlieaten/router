@@ -1,6 +1,6 @@
 import { createMemoryHistory } from '@tanstack/history'
 import { Linking } from 'react-native'
-import { getUrlScheme } from '@tanstack/router-core'
+import { getUrlScheme, isRedirect } from '@tanstack/router-core'
 import { createNavigation } from '@tanstack/router-core/navigation'
 import {
   createRouteTreeSource,
@@ -15,20 +15,26 @@ import type * as React from 'react'
 import type { FormSheet, Stack, Tabs } from 'react-native-screens'
 import type { ModalProps } from 'react-native'
 import type { NativeNavigationPersistenceOptions } from './persistence'
-import type { AnyRouter, NavigateOptionExtensions } from '@tanstack/router-core'
+import type {
+  AnyRouteMatch,
+  AnyRouter,
+  NavigateOptionExtensions,
+  ParsedLocation,
+} from '@tanstack/router-core'
 import type {
   Navigation,
   NavigationContainer,
+  NavigationDefinition,
   NavigationEntry,
-  NavigationOptions,
+  NavigationRequest,
 } from '@tanstack/router-core/navigation'
 
 export interface NativeNavigationOptions {
   dataCache?: { maxEntries?: number }
   persistence?: NativeNavigationPersistenceOptions
   invalidateOnResume?: boolean
-  rootKind?: NavigationOptions<AnyRouter>['rootKind']
-  backBehavior?: NavigationOptions<AnyRouter>['backBehavior']
+  rootKind?: NavigationDefinition['rootKind']
+  backBehavior?: NavigationDefinition['backBehavior']
   renderContainer?: React.ComponentType<NativeContainerRenderProps>
   linking?: { prefixes: Array<string> }
   initialContainer: string
@@ -46,7 +52,24 @@ export interface NativeNavigationContainer extends NavigationContainer {
   >
 }
 
+export type NativeNavigatorOptions = {
+  initialLocation?: NavigationRequest
+} & Pick<
+  NativeNavigationOptions,
+  | 'initialContainer'
+  | 'containers'
+  | 'rootKind'
+  | 'backBehavior'
+  | 'renderContainer'
+>
 export interface NativeScreenOptions {
+  /** Instantiate this navigator separately for every visit to this route. */
+  navigator?:
+    | NativeNavigatorOptions
+    | ((
+        match: AnyRouteMatch,
+        location: ParsedLocation,
+      ) => NativeNavigatorOptions)
   header?: Partial<React.ComponentProps<typeof Stack.HeaderConfig>>
   stack?: Partial<
     Pick<
@@ -89,8 +112,10 @@ declare module '@tanstack/router-core' {
 export type NativeNavigation = Navigation<AnyRouter>
 export type NativeEntry = NavigationEntry<AnyRouter>
 
+const navigatorDefinitions = new WeakMap<AnyRouter, NativeNavigatorOptions>()
 const controllers = new WeakMap<AnyRouter, NativeNavigation>()
 const roots = new WeakSet<AnyRouter>()
+const rootRouters = new WeakMap<AnyRouter, AnyRouter>()
 const persistences = new WeakMap<
   NativeNavigation,
   ReturnType<typeof createNavigationPersistence> | undefined
@@ -120,6 +145,36 @@ export function getScreenOptions(entry: NativeEntry): NativeScreenOptions {
   )
 }
 
+export function getEntryNavigatorOptions(
+  entry: NativeEntry,
+): NativeNavigatorOptions | undefined {
+  const accepted = navigatorDefinitions.get(entry.value)
+  if (accepted) {
+    return accepted
+  }
+  const match = entry.value.state.matches.at(-1)
+  if (match?.status !== 'success' || match._notFound) {
+    return undefined
+  }
+  const definition =
+    match &&
+    entry.value.routesById[match.routeId]?.options.staticData?.native?.navigator
+  const resolved =
+    typeof definition === 'function'
+      ? definition(match, entry.value.state.location)
+      : definition
+  if (resolved) {
+    const accepted = {
+      ...resolved,
+      rootKind: resolved.rootKind,
+      backBehavior: resolved.backBehavior,
+    }
+    navigatorDefinitions.set(entry.value, accepted)
+    return accepted
+  }
+  return undefined
+}
+
 export function attachNativeNavigation(router: AnyRouter) {
   const config = router.options.native ?? {
     initialContainer: 'main',
@@ -130,7 +185,36 @@ export function attachNativeNavigation(router: AnyRouter) {
   const presented = new WeakSet<AnyRouter>()
   const navigation = createNavigation<AnyRouter>({
     ...config,
+    getNavigator(entry) {
+      const definition = getEntryNavigatorOptions(entry)
+      if (!definition) {
+        return undefined
+      }
+      const pathname = entry.href.split(/[?#]/)[0]!
+      const target = Object.entries(definition.containers).find(
+        ([, container]) => {
+          const base = container.initialHref?.split(/[?#]/)[0]
+          return base && (pathname === base || pathname.startsWith(base + '/'))
+        },
+      )?.[0]
+      return {
+        ...definition,
+        initialLocation:
+          definition.initialLocation ??
+          (target ? { href: entry.href, target } : undefined),
+      }
+    },
     async prepare(entry, signal) {
+      const parent = entry.parent
+      const ownerNavigation = parent?.navigator ?? navigation
+      const definition = parent ? getEntryNavigatorOptions(parent)! : config
+      const [matchedRoutes] = router.getMatchedRoutes(
+        router.buildLocation({ href: entry.href } as never).pathname,
+      )
+      const start = parent?.value.state.matches.length ?? 0
+      const boundary = matchedRoutes
+        .slice(start)
+        .find((route) => route.options.staticData?.native?.navigator)
       const scope = createRouterExecutionScope(
         () => {
           const history = createMemoryHistory({ initialEntries: [entry.href] })
@@ -140,6 +224,7 @@ export function attachNativeNavigation(router: AnyRouter) {
           return new Router(
             {
               ...router.options,
+              native: { ...config, ...definition },
               Wrap: undefined,
               isServer: false,
               history,
@@ -147,16 +232,26 @@ export function attachNativeNavigation(router: AnyRouter) {
             createRouteTreeSource(router),
           )
         },
-        { deferLifecycle: true },
+        {
+          deferLifecycle: true,
+          endRouteId: boundary?.id,
+          parent: parent
+            ? {
+                scope: scopes.get(parent.value)!,
+                routeId: parent.value.state.matches.at(-1)!.routeId,
+              }
+            : undefined,
+        },
       )
       const scoped = scope.router
+      rootRouters.set(scoped, router)
       dataCache.hydrate(scoped)
       invalidates.set(scoped, scoped.invalidate)
       scopes.set(scoped, scope)
       entryOwners.set(scoped, entry)
       try {
         await scope.load(signal)
-        controllers.set(scoped, navigation)
+        controllers.set(scoped, ownerNavigation)
         scoped.subscribe('onResolved', () => {
           if (presented.has(scoped)) {
             dataCache.publish(scoped)
@@ -187,13 +282,14 @@ export function attachNativeNavigation(router: AnyRouter) {
           })
         }
         scoped.history.canGoBack = () =>
-          !scope.isDisposed && navigation.canGoBack({ target: entry.container })
+          !scope.isDisposed &&
+          ownerNavigation.canGoBack({ target: entry.container })
         // Install public navigation only after initial loading. Loader redirects
         // during preparation must resolve inside this entry's own load pipeline.
         scoped.navigate = (options) => navigateNative(scoped, options)
         scoped.history.back = () => {
           if (!scope.isDisposed) {
-            void navigation.back({ target: entry.container })
+            void ownerNavigation.back({ target: entry.container })
           }
         }
         return { value: scoped, href: scoped.state.location.href }
@@ -209,6 +305,22 @@ export function attachNativeNavigation(router: AnyRouter) {
       // transition. WeakMap ownership ends when that subtree is collected.
     },
   })
+  const initialize = navigation.initialize
+  navigation.initialize = async () => {
+    try {
+      return await initialize()
+    } catch (error) {
+      if (!isRedirect(error)) {
+        throw error
+      }
+      await navigateNative(router, {
+        ...error.options,
+        replace: true,
+        ignoreBlocker: true,
+      })
+      return true
+    }
+  }
   const persistence = config.persistence
     ? createNavigationPersistence(navigation, config.persistence)
     : undefined
@@ -241,7 +353,8 @@ export function attachNativeNavigation(router: AnyRouter) {
     }
     projectRouterExecution(router, source)
   }
-  navigation.onChange((change) => {
+  let focused: Array<NativeEntry> = []
+  navigation.onTreeChange((_owner, change) => {
     for (const { entry, previous } of change.updated) {
       if (change.signal.aborted) {
         break
@@ -252,23 +365,34 @@ export function attachNativeNavigation(router: AnyRouter) {
       dataCache.publish(entry.value)
     }
     project()
-    const before = navigation.getActiveEntry(change.current)
-    const after = navigation.getActiveEntry(change.next)
-    if (before?.key !== after?.key) {
-      if (before) {
-        emitNativeNavigationEvent(navigation, {
+    const after = navigation.getActivePath()
+    for (const entry of focused) {
+      if (!after.some((item) => item.key === entry.key)) {
+        emitNativeNavigationEvent(getNativeNavigation(entry.value), {
           type: 'blur',
-          target: before.key,
-        })
-      }
-      if (after) {
-        emitNativeNavigationEvent(navigation, {
-          type: 'focus',
-          target: after.key,
+          target: entry.key,
         })
       }
     }
-    emitNativeNavigationEvent(navigation, { type: 'state', target: after?.key })
+    for (const entry of after) {
+      if (!focused.some((item) => item.key === entry.key)) {
+        emitNativeNavigationEvent(getNativeNavigation(entry.value), {
+          type: 'focus',
+          target: entry.key,
+        })
+      }
+    }
+    focused = after
+    const owners = new Set([
+      navigation,
+      ...after.map((entry) => getNativeNavigation(entry.value)),
+    ])
+    for (const owner of owners) {
+      emitNativeNavigationEvent(owner, {
+        type: 'state',
+        target: owner.getActiveEntry()?.key,
+      })
+    }
   })
   router.navigate = (options) => navigateNative(router, options)
   router.load = async () => {
@@ -278,17 +402,23 @@ export function attachNativeNavigation(router: AnyRouter) {
   router.invalidate = (async (options) => {
     dataCache.clear()
     navigation.cancelPending()
-    await Promise.all(
-      Object.values(navigation.getSnapshot().stacks)
-        .flat()
-        .map((entry) => {
-          entry.value.update({
-            ...entry.value.options,
-            context: router.options.context,
-          })
-          return invalidates.get(entry.value)!(options as never)
-        }),
-    )
+    const refresh = async (owner: NativeNavigation): Promise<void> => {
+      await Promise.all(
+        Object.values(owner.getSnapshot().stacks)
+          .flat()
+          .map(async (entry) => {
+            entry.value.update({
+              ...entry.value.options,
+              context: router.options.context,
+            })
+            await invalidates.get(entry.value)!(options as never)
+            if (entry.navigator) {
+              await refresh(entry.navigator)
+            }
+          }),
+      )
+    }
+    await refresh(navigation)
     project()
   }) as typeof router.invalidate
   router.preloadRoute = ((options) => {
@@ -345,9 +475,7 @@ export function attachNativeNavigation(router: AnyRouter) {
       historyBlockers.push(blocker)
       const unblocks = new Map<string, () => void>()
       const register = () => {
-        for (const entry of Object.values(
-          navigation.getSnapshot().stacks,
-        ).flat()) {
+        for (const entry of navigation.getEntries()) {
           if (!unblocks.has(entry.key)) {
             unblocks.set(
               entry.key,
@@ -364,7 +492,7 @@ export function attachNativeNavigation(router: AnyRouter) {
           }
         }
       }
-      const unsubscribe = navigation.onChange(register)
+      const unsubscribe = navigation.onTreeChange(register)
       register()
       return () => {
         historyBlockers.splice(historyBlockers.indexOf(blocker), 1)
@@ -385,7 +513,7 @@ export function attachNativeNavigation(router: AnyRouter) {
     },
   }
   router.history = history
-  navigation.onChange((change) => {
+  navigation.onTreeChange((_owner, change) => {
     const action = {
       type:
         change.action === 'back'
@@ -402,11 +530,31 @@ export function attachNativeNavigation(router: AnyRouter) {
 }
 
 export async function navigateNative(router: AnyRouter, options: unknown) {
+  for (let redirects = 0; redirects < 16; redirects++) {
+    try {
+      return await navigateNativeOnce(router, options)
+    } catch (error) {
+      if (!isRedirect(error)) {
+        throw error
+      }
+      router = rootRouters.get(router) ?? router
+      options = { ...error.options, replace: true, ignoreBlocker: true }
+    }
+  }
+  throw new Error('Too many native navigation redirects')
+}
+async function navigateNativeOnce(router: AnyRouter, options: unknown) {
   if (scopes.get(router)?.isDisposed) {
     return
   }
   const intent = options as NavigateOptionExtensions & { replace?: boolean }
-  const navigation = getNativeNavigation(router)
+  let navigation = getNativeNavigation(router)
+  if (roots.has(router) && !intent.target) {
+    const active = navigation.getActiveEntry()
+    if (active) {
+      navigation = getNativeNavigation(active.value)
+    }
+  }
   const raw = options as {
     href?: string
     to?: string
@@ -429,7 +577,36 @@ export async function navigateNative(router: AnyRouter, options: unknown) {
     ...(options as object),
     _includeValidateSearch: true,
   } as never)
-  const target = intent.target ?? entryOwners.get(router)?.container
+  if (intent.target) {
+    while (
+      !navigation.getSnapshot().stacks[intent.target] &&
+      navigation.getOwner()
+    ) {
+      navigation = navigation.getOwner()!.navigation
+    }
+  } else {
+    // Navigating outside a child boundary targets the owning parent stack.
+    const destination = navigation.getOwner()
+      ? (rootRouters.get(router) ?? router).matchRoutes(location)
+      : []
+    while (navigation.getOwner()) {
+      const owner = navigation.getOwner()!
+      const prefix = owner.entry.value.state.matches
+      if (
+        destination.length > prefix.length &&
+        prefix.every((match, index) => destination[index]?.id === match.id)
+      ) {
+        break
+      }
+      navigation = owner.navigation
+    }
+  }
+  const scopedOwner = entryOwners.get(router)
+  const target =
+    intent.target ??
+    (scopedOwner && navigation.getSnapshot().stacks[scopedOwner.container]
+      ? scopedOwner.container
+      : undefined)
   if (intent.stackBehavior === 'popTo') {
     await navigation.popTo({
       href: location.href,

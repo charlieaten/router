@@ -43,6 +43,13 @@ function bindNavigation(
     live() ? action() : Promise.resolve(false)
   const target = container === '$root' ? undefined : container
   const definitions = router.options.native?.containers ?? {}
+  const root = () => {
+    let current = navigation
+    while (current.getOwner()) {
+      current = current.getOwner()!.navigation
+    }
+    return current
+  }
   const drawer = () => {
     let id = container
     while (id && id !== '$root') {
@@ -65,10 +72,22 @@ function bindNavigation(
     popToTop: (options) =>
       dispatch(() => navigation.popToTop({ target, ...options })),
     getState: navigation.getSnapshot,
-    isFocused: () => !entry || navigation.getActiveEntry()?.key === entry.key,
+    isFocused: () =>
+      !entry ||
+      root()
+        .getActivePath()
+        .some((item) => item.key === entry.key),
     getParent(id) {
       if (container === '$root') {
-        return undefined
+        const owner = navigation.getOwner()
+        return owner
+          ? bindNavigation(
+              owner.navigation,
+              owner.entry.value,
+              owner.entry,
+              owner.entry.container,
+            )
+          : undefined
       }
       let parent = container ? definitions[container]?.parent : undefined
       if (id) {
@@ -76,7 +95,16 @@ function bindNavigation(
           parent = definitions[parent]?.parent
         }
         if (parent !== id && id !== '$root') {
-          return undefined
+          const owner = navigation.getOwner()
+          return owner
+            ? owner.entry.container === id
+              ? bindNavigation(owner.navigation, owner.entry.value, owner.entry)
+              : bindNavigation(
+                  owner.navigation,
+                  owner.entry.value,
+                  owner.entry,
+                ).getParent(id)
+            : undefined
         }
       }
       return bindNavigation(navigation, router, entry, parent ?? '$root')
@@ -107,15 +135,25 @@ export function useNavigation(): ScopedNativeNavigation {
   )
 }
 
+function rootNavigation(navigation: NativeNavigation): NativeNavigation {
+  const owner = navigation.getOwner()
+  return owner ? rootNavigation(owner.navigation) : navigation
+}
+
 export function useIsFocused() {
   const entry = React.useContext(entryContext)
-  const navigation = getNativeNavigation(useRouter())
+  const navigation = rootNavigation(getNativeNavigation(useRouter()))
   React.useSyncExternalStore(
     navigation.subscribe,
     navigation.getSnapshot,
     navigation.getSnapshot,
   )
-  return !entry || navigation.getActiveEntry()?.key === entry.key
+  return (
+    !entry ||
+    rootNavigation(navigation)
+      .getActivePath()
+      .some((item) => item.key === entry.key)
+  )
 }
 
 export function useFocusEffect(effect: () => void | (() => void)) {

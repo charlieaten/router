@@ -30,6 +30,16 @@ export function VenueList({
       <Text style={{ color: '#7b776a', lineHeight: 23 }}>
         Good places have a way of bringing us back. Keep a few close.
       </Text>
+      <Link
+        to="/workspaces/$workspaceId"
+        params={{ workspaceId: 'Fieldnotes' }}
+        testID="open-workspace-lab"
+        style={{ padding: 18, backgroundColor: '#203d32', borderRadius: 14 }}
+      >
+        <Text style={{ color: 'white', fontWeight: '600' }}>
+          Try independent nested stacks ↗
+        </Text>
+      </Link>
       {venues.map((venue) => (
         <Link
           key={venue.id}

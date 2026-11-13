@@ -14,6 +14,8 @@ import { Route as ComposeRouteImport } from './routes/compose'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as ApiVenuesRouteImport } from './routes/api.venues'
 import { Route as VenuesVenueIdRouteImport } from './routes/venues.$venueId'
+import { Route as WorkspacesWorkspaceIdRouteImport } from './routes/workspaces.$workspaceId'
+import { Route as WorkspacesWorkspaceIdSectionPageRouteImport } from './routes/workspaces.$workspaceId.$section.$page'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +42,17 @@ const VenuesVenueIdRoute = VenuesVenueIdRouteImport.update({
   path: '/venues/$venueId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspacesWorkspaceIdRoute = WorkspacesWorkspaceIdRouteImport.update({
+  id: '/workspaces/$workspaceId',
+  path: '/workspaces/$workspaceId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspacesWorkspaceIdSectionPageRoute =
+  WorkspacesWorkspaceIdSectionPageRouteImport.update({
+    id: '/$section/$page',
+    path: '/$section/$page',
+    getParentRoute: () => WorkspacesWorkspaceIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +60,8 @@ export interface FileRoutesByFullPath {
   '/search': typeof SearchRoute
   '/api/venues': typeof ApiVenuesRoute
   '/venues/$venueId': typeof VenuesVenueIdRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
+  '/workspaces/$workspaceId/$section/$page': typeof WorkspacesWorkspaceIdSectionPageRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +69,8 @@ export interface FileRoutesByTo {
   '/search': typeof SearchRoute
   '/api/venues': typeof ApiVenuesRoute
   '/venues/$venueId': typeof VenuesVenueIdRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
+  '/workspaces/$workspaceId/$section/$page': typeof WorkspacesWorkspaceIdSectionPageRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,12 +79,28 @@ export interface FileRoutesById {
   '/search': typeof SearchRoute
   '/api/venues': typeof ApiVenuesRoute
   '/venues/$venueId': typeof VenuesVenueIdRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
+  '/workspaces/$workspaceId/$section/$page': typeof WorkspacesWorkspaceIdSectionPageRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/compose' | '/search' | '/api/venues' | '/venues/$venueId'
+  fullPaths:
+    | '/'
+    | '/compose'
+    | '/search'
+    | '/api/venues'
+    | '/venues/$venueId'
+    | '/workspaces/$workspaceId'
+    | '/workspaces/$workspaceId/$section/$page'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/compose' | '/search' | '/api/venues' | '/venues/$venueId'
+  to:
+    | '/'
+    | '/compose'
+    | '/search'
+    | '/api/venues'
+    | '/venues/$venueId'
+    | '/workspaces/$workspaceId'
+    | '/workspaces/$workspaceId/$section/$page'
   id:
     | '__root__'
     | '/'
@@ -75,6 +108,8 @@ export interface FileRouteTypes {
     | '/search'
     | '/api/venues'
     | '/venues/$venueId'
+    | '/workspaces/$workspaceId'
+    | '/workspaces/$workspaceId/$section/$page'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -83,6 +118,7 @@ export interface RootRouteChildren {
   SearchRoute: typeof SearchRoute
   ApiVenuesRoute: typeof ApiVenuesRoute
   VenuesVenueIdRoute: typeof VenuesVenueIdRoute
+  WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -122,8 +158,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VenuesVenueIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspaces/$workspaceId': {
+      id: '/workspaces/$workspaceId'
+      path: '/workspaces/$workspaceId'
+      fullPath: '/workspaces/$workspaceId'
+      preLoaderRoute: typeof WorkspacesWorkspaceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspaces/$workspaceId/$section/$page': {
+      id: '/workspaces/$workspaceId/$section/$page'
+      path: '/$section/$page'
+      fullPath: '/workspaces/$workspaceId/$section/$page'
+      preLoaderRoute: typeof WorkspacesWorkspaceIdSectionPageRouteImport
+      parentRoute: typeof WorkspacesWorkspaceIdRoute
+    }
   }
 }
+
+interface WorkspacesWorkspaceIdRouteChildren {
+  WorkspacesWorkspaceIdSectionPageRoute: typeof WorkspacesWorkspaceIdSectionPageRoute
+}
+
+const WorkspacesWorkspaceIdRouteChildren: WorkspacesWorkspaceIdRouteChildren = {
+  WorkspacesWorkspaceIdSectionPageRoute: WorkspacesWorkspaceIdSectionPageRoute,
+}
+
+const WorkspacesWorkspaceIdRouteWithChildren =
+  WorkspacesWorkspaceIdRoute._addFileChildren(
+    WorkspacesWorkspaceIdRouteChildren,
+  )
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -131,6 +194,7 @@ const rootRouteChildren: RootRouteChildren = {
   SearchRoute: SearchRoute,
   ApiVenuesRoute: ApiVenuesRoute,
   VenuesVenueIdRoute: VenuesVenueIdRoute,
+  WorkspacesWorkspaceIdRoute: WorkspacesWorkspaceIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
