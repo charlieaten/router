@@ -274,3 +274,27 @@ it('keeps the original flat visit blocker when another blocker rejects a prepare
   expect(navigation.isRemovalBlocked(a.key)).toBe(true)
   expect(navigation.getActiveEntry()?.key).toBe(b.key)
 })
+
+it('closes an owning drawer before popping a nested child stack', async () => {
+  const navigation = createNavigation<string>({
+    rootKind: 'drawer',
+    initialContainer: 'main',
+    containers: { main: { initialHref: '/' } },
+    prepare: async (entry) => ({ value: entry.href }),
+    getNavigator: (entry) =>
+      entry.href === '/parent'
+        ? {
+            initialContainer: 'child',
+            containers: { child: { initialHref: '/child' } },
+          }
+        : undefined,
+  })
+  await navigation.initialize()
+  await navigation.navigate({ href: '/parent' })
+  const child = navigation.getSnapshot().stacks.main!.at(-1)!.navigator!
+  await child.navigate({ href: '/child/two' })
+  await navigation.setDrawerOpen('$root', true)
+  await navigation.back()
+  expect(navigation.getSnapshot().openDrawers).toEqual([])
+  expect(child.getActiveEntry()?.href).toBe('/child/two')
+})
