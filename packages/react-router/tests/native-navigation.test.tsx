@@ -8,18 +8,19 @@ import {
   waitFor,
 } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { useBlocker } from '../src/useBlocker.native'
 import {
+  Outlet,
+  Router,
+  RouterProvider,
   createRootRoute,
   createRootRouteWithContext,
   createRoute,
-} from '../src/route'
-import { Outlet } from '../src/Match'
-import { Router, createRouter } from '../src/router.native'
-import { RouterProvider } from '../src/RouterProvider.native'
-import { getNativeNavigation } from '../src/native/controller'
-import { useParams } from '../src/useParams'
-import { useNavigate } from '../src/useNavigate.native'
+  createRouter,
+  useBlocker,
+  useNavigate,
+  useParams,
+} from '../dist/native/esm/index.native.js'
+import { getNativeNavigation } from '../dist/native/esm/native/controller.js'
 import { Platform, modalInstances } from './native-host'
 
 afterEach(() => {
@@ -710,7 +711,8 @@ it('renders a borrowed ancestor not-found fallback in the child viewport', async
 })
 
 it('tracks retained child focus across ancestor tab changes and resolves a named owning navigator', async () => {
-  const { useIsFocused, useNavigation } = await import('../src/native/context')
+  const { useIsFocused, useNavigation } =
+    await import('../dist/native/esm/index.native.js')
   function Child() {
     const focused = useIsFocused()
     const navigation = useNavigation()
