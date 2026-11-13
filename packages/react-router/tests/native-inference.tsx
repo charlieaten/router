@@ -7,6 +7,8 @@ import {
   createRouter,
   linkOptions,
 } from '@tanstack/react-router'
+import type { NativeNavigatorOptions } from '@tanstack/react-router'
+import type { AnyRouteMatch } from '@tanstack/router-core'
 
 const root = createRootRouteWithContext<{ session: string }>()({})
 const venue = createRoute({
@@ -61,3 +63,21 @@ function TypedNativeScreen() {
   })
   return <Link {...options}>Open venue</Link>
 }
+
+const nestedNavigator: NativeNavigatorOptions = {
+  initialContainer: 'feed',
+  containers: { feed: { initialHref: '/venues/123' } },
+}
+const nestedRoute = createRoute({
+  getParentRoute: () => root,
+  path: 'nested',
+  staticData: {
+    native: {
+      navigator: (match, location) => {
+        expectTypeOf(match).toEqualTypeOf<AnyRouteMatch>()
+        expectTypeOf(location.href).toEqualTypeOf<string>()
+        return nestedNavigator
+      },
+    },
+  },
+})

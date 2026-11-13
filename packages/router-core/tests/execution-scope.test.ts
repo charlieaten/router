@@ -211,3 +211,97 @@ it('stops activation callbacks when an earlier callback disposes the scope', asy
   expect(scope.isDisposed).toBe(true)
   expect(enterChild).not.toHaveBeenCalled()
 })
+
+it('borrows ancestor execution without rerunning its hooks or cancelling its lifetime', async () => {
+  const parentLoad = vi.fn(() => ({ owner: 'A' }))
+  const parentEnter = vi.fn()
+  const parentLeave = vi.fn()
+  const root = new BaseRootRoute({})
+  const parent = new BaseRoute({
+    getParentRoute: () => root,
+    path: '/workspace/$id',
+    loader: parentLoad,
+    beforeLoad: () => ({ actor: 'parent' }),
+    onEnter: parentEnter,
+    onLeave: parentLeave,
+  })
+  const child = new BaseRoute({
+    getParentRoute: () => parent,
+    path: '/feed/$item',
+    loader: ({ context }) => context.actor,
+  })
+  const routeTree = root.addChildren([parent.addChildren([child])])
+  const owner = createRouterExecutionScope(
+    () =>
+      createTestRouter({
+        routeTree,
+        history: createMemoryHistory({
+          initialEntries: ['/workspace/a/feed/one'],
+        }),
+        isServer: false,
+      }),
+    { endRouteId: '/workspace/$id' },
+  )
+  await owner.load()
+  expect(owner.router.state.matches.at(-1)?.routeId).toBe(parent.id)
+  const nested = createRouterExecutionScope(
+    () =>
+      createTestRouter({
+        routeTree,
+        history: createMemoryHistory({
+          initialEntries: ['/workspace/a/feed/one'],
+        }),
+        isServer: false,
+      }),
+    { parent: { scope: owner, routeId: parent.id } },
+  )
+  await nested.load()
+  expect(parentLoad).toHaveBeenCalledTimes(1)
+  expect(parentEnter).toHaveBeenCalledTimes(1)
+  expect(nested.router.state.matches.at(-1)?.loaderData).toBe('parent')
+  owner.dispose()
+  expect(parentLeave).not.toHaveBeenCalled()
+  nested.dispose()
+  expect(parentLeave).toHaveBeenCalledTimes(1)
+})
+
+it('releases ancestor leases even if a child leave callback throws', async () => {
+  const leave = vi.fn()
+  const root = new BaseRootRoute({})
+  const parent = new BaseRoute({
+    getParentRoute: () => root,
+    path: '/parent',
+    onLeave: leave,
+  })
+  const child = new BaseRoute({
+    getParentRoute: () => parent,
+    path: '/child',
+    onLeave: () => {
+      throw new Error('leave failed')
+    },
+  })
+  const routeTree = root.addChildren([parent.addChildren([child])])
+  const owner = createRouterExecutionScope(
+    () =>
+      createTestRouter({
+        routeTree,
+        history: createMemoryHistory({ initialEntries: ['/parent/child'] }),
+        isServer: false,
+      }),
+    { endRouteId: '/parent' },
+  )
+  await owner.load()
+  const nested = createRouterExecutionScope(
+    () =>
+      createTestRouter({
+        routeTree,
+        history: createMemoryHistory({ initialEntries: ['/parent/child'] }),
+        isServer: false,
+      }),
+    { parent: { scope: owner, routeId: parent.id } },
+  )
+  await nested.load()
+  owner.dispose()
+  expect(() => nested.dispose()).toThrow('leave failed')
+  expect(leave).toHaveBeenCalledTimes(1)
+})
