@@ -10,6 +10,7 @@
     "src/**/*.native.ts",
     "src/**/*.native.tsx",
     "src/native",
-    "tests/native*.tsx"
+    "tests/native*.tsx",
+    "tests/native*.test.ts"
   ]
 }

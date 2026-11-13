@@ -456,3 +456,313 @@ it('does not echo the old tab with new provenance while the selected tab loads',
     'search:1',
   )
 })
+
+it('renders repeated parent visits with independent child stacks and one ancestor execution per visit', async () => {
+  const parentLoader = vi.fn(() => 'shared parent data')
+  const parentMount = vi.fn()
+  const parentLeave = vi.fn()
+  const root = createRootRoute({ component: Outlet })
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <p>Home</p>,
+  })
+  function Workspace() {
+    const [count, setCount] = React.useState(0)
+    React.useEffect(() => {
+      parentMount()
+    }, [])
+    return (
+      <div>
+        <button onClick={() => setCount((value) => value + 1)}>
+          Parent count {count}
+        </button>
+        <Outlet />
+      </div>
+    )
+  }
+  const workspace = createRoute({
+    getParentRoute: () => root,
+    path: '/workspace/$id',
+    component: Workspace,
+    loader: parentLoader,
+    onLeave: parentLeave,
+    staticData: {
+      native: {
+        navigator: ({ params }) => ({
+          initialContainer: 'feed',
+          backBehavior: 'none',
+          containers: {
+            feed: { initialHref: `/workspace/${params.id}/feed/one` },
+            search: { initialHref: `/workspace/${params.id}/search/one` },
+          },
+        }),
+      },
+    },
+  })
+  const feed = createRoute({
+    getParentRoute: () => workspace,
+    path: '/feed/$item',
+    component: () => (
+      <p>
+        Feed {feed.useParams().item} {workspace.useLoaderData()}
+      </p>
+    ),
+  })
+  const search = createRoute({
+    getParentRoute: () => workspace,
+    path: '/search/$item',
+    component: () => <p>Search {search.useParams().item}</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home, workspace.addChildren([feed, search])]),
+  })
+  const nav = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Home')
+  await act(() =>
+    router.navigate({ to: '/workspace/$id', params: { id: 'a' } }),
+  )
+  await screen.findByText('Feed one shared parent data')
+  const a = nav.getSnapshot().stacks.main!.at(-1)!
+  fireEvent.click(screen.getByText('Parent count 0'))
+  await act(() => a.navigator!.navigate({ href: '/workspace/a/feed/two' }))
+  await act(() => a.navigator!.select('search'))
+  await act(() => a.navigator!.navigate({ href: '/workspace/a/search/three' }))
+  await act(() =>
+    router.navigate({
+      to: '/workspace/$id',
+      params: { id: 'a' },
+      target: 'main',
+    }),
+  )
+  const b = nav.getSnapshot().stacks.main!.at(-1)!
+  expect(a.key).not.toBe(b.key)
+  expect(b.navigator!.getSnapshot().selected).toBe('feed')
+  expect(parentLoader).toHaveBeenCalledTimes(2)
+  expect(parentMount).toHaveBeenCalledTimes(2)
+  await act(() => nav.back({ target: 'main' }))
+  await screen.findByText('Parent count 1')
+  expect(nav.getActiveEntry()?.href).toBe('/workspace/a/search/three')
+  expect(parentLeave).toHaveBeenCalledTimes(1)
+  await act(() => nav.back())
+  expect(nav.getActiveEntry()?.href).toBe('/workspace/a/search/one')
+  await act(() => a.navigator!.select('feed'))
+  expect(nav.getActiveEntry()?.href).toBe('/workspace/a/feed/two')
+  router.history.destroy()
+})
+
+it('mounts a componentless navigator route and keeps its accepted factory definition', async () => {
+  const factory = vi.fn(() => ({
+    initialContainer: 'child',
+    containers: { child: { initialHref: '/parent/child' } },
+  }))
+  const root = createRootRoute({ component: Outlet })
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <p>Home</p>,
+  })
+  const parent = createRoute({
+    getParentRoute: () => root,
+    path: '/parent',
+    staticData: { native: { navigator: factory } },
+  })
+  const child = createRoute({
+    getParentRoute: () => parent,
+    path: '/child',
+    component: () => <p>Componentless child</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home, parent.addChildren([child])]),
+  })
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Home')
+  await act(() => router.navigate({ to: '/parent' }))
+  await screen.findByText('Componentless child')
+  await act(() => router.invalidate())
+  expect(factory).toHaveBeenCalledTimes(1)
+  router.history.destroy()
+})
+
+it('retargets an initial child redirect outside its parent without publishing the rejected parent', async () => {
+  const { redirect } = await import('@tanstack/router-core')
+  const root = createRootRoute({ component: Outlet })
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <p>Home</p>,
+  })
+  const login = createRoute({
+    getParentRoute: () => root,
+    path: '/login',
+    component: () => <p>Log in</p>,
+  })
+  const parent = createRoute({
+    getParentRoute: () => root,
+    path: '/private',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          initialContainer: 'child',
+          containers: { child: { initialHref: '/private/child' } },
+        },
+      },
+    },
+  })
+  const child = createRoute({
+    getParentRoute: () => parent,
+    path: '/child',
+    beforeLoad: () => {
+      throw redirect({ to: '/login' })
+    },
+    component: () => <p>Secret child</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home, login, parent.addChildren([child])]),
+  })
+  const nav = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Home')
+  await act(() => router.navigate({ to: '/private' }))
+  await screen.findByText('Log in')
+  expect(
+    nav.getSnapshot().stacks.main!.some((entry) => entry.href === '/private'),
+  ).toBe(false)
+  router.history.destroy()
+})
+
+it('shows a parent loader error without preparing its child navigator', async () => {
+  const factory = vi.fn(() => ({
+    initialContainer: 'child',
+    containers: { child: { initialHref: '/parent/child' } },
+  }))
+  const root = createRootRoute({ component: Outlet })
+  const parent = createRoute({
+    getParentRoute: () => root,
+    path: '/parent',
+    loader: () => {
+      throw new Error('unavailable')
+    },
+    errorComponent: () => <p>Parent unavailable</p>,
+    staticData: { native: { navigator: factory } },
+  })
+  const child = createRoute({
+    getParentRoute: () => parent,
+    path: '/child',
+    component: () => <p>Child</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([parent.addChildren([child])]),
+    native: {
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/parent' } },
+    },
+  })
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Parent unavailable')
+  expect(factory).not.toHaveBeenCalled()
+  router.history.destroy()
+})
+
+it('renders a borrowed ancestor not-found fallback in the child viewport', async () => {
+  const { notFound } = await import('@tanstack/router-core')
+  const root = createRootRoute({ component: Outlet })
+  const parent = createRoute({
+    getParentRoute: () => root,
+    path: '/parent',
+    component: () => (
+      <div>
+        <p>Parent shell</p>
+        <Outlet />
+      </div>
+    ),
+    notFoundComponent: () => <p>Missing child</p>,
+    staticData: {
+      native: {
+        navigator: {
+          initialContainer: 'child',
+          containers: { child: { initialHref: '/parent/child' } },
+        },
+      },
+    },
+  })
+  const child = createRoute({
+    getParentRoute: () => parent,
+    path: '/child',
+    loader: () => {
+      throw notFound()
+    },
+    component: () => <p>Child</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([parent.addChildren([child])]),
+    native: {
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/parent' } },
+    },
+  })
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Parent shell')
+  await screen.findByText('Missing child')
+  router.history.destroy()
+})
+
+it('tracks retained child focus across ancestor tab changes and resolves a named owning navigator', async () => {
+  const { useIsFocused, useNavigation } = await import('../src/native/context')
+  function Child() {
+    const focused = useIsFocused()
+    const navigation = useNavigation()
+    return (
+      <p>
+        {focused ? 'Child focused' : 'Child blurred'}{' '}
+        {navigation.getParent('main') ? 'with owner' : 'missing owner'}
+      </p>
+    )
+  }
+  const root = createRootRoute({ component: Outlet })
+  const parent = createRoute({
+    getParentRoute: () => root,
+    path: '/parent',
+    component: Outlet,
+    staticData: {
+      native: {
+        keepActive: true,
+        navigator: {
+          initialContainer: 'feed',
+          containers: { feed: { initialHref: '/parent/child' } },
+        },
+      },
+    },
+  })
+  const child = createRoute({
+    getParentRoute: () => parent,
+    path: '/child',
+    component: Child,
+    staticData: { native: { keepActive: true } },
+  })
+  const other = createRoute({
+    getParentRoute: () => root,
+    path: '/other',
+    component: () => <p>Other tab</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([parent.addChildren([child]), other]),
+    native: {
+      initialContainer: 'main',
+      containers: {
+        main: { initialHref: '/parent' },
+        other: { initialHref: '/other' },
+      },
+    },
+  })
+  const nav = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Child focused with owner')
+  await act(() => nav.select('other'))
+  await screen.findByText('Child blurred with owner')
+  await act(() => nav.select('main'))
+  await screen.findByText('Child focused with owner')
+  router.history.destroy()
+})
