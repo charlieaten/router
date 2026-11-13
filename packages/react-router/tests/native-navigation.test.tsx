@@ -716,6 +716,10 @@ it('tracks retained child focus across ancestor tab changes and resolves a named
   function Child() {
     const focused = useIsFocused()
     const navigation = useNavigation()
+    expect(navigation.getParent()?.getState().stacks.feed).toBeDefined()
+    expect(
+      navigation.getParent()?.getParent()?.getState().stacks.main,
+    ).toBeDefined()
     return (
       <p>
         {focused ? 'Child focused' : 'Child blurred'}{' '}
@@ -766,5 +770,47 @@ it('tracks retained child focus across ancestor tab changes and resolves a named
   await screen.findByText('Child blurred with owner')
   await act(() => nav.select('main'))
   await screen.findByText('Child focused with owner')
+  router.history.destroy()
+})
+
+it('uses a route-owned tabs host independently of the owning root stack kind', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const parent = createRoute({
+    getParentRoute: () => root,
+    path: '/parent',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          initialContainer: 'feed',
+          containers: {
+            feed: { initialHref: '/parent/feed' },
+            search: { initialHref: '/parent/search' },
+          },
+        },
+      },
+    },
+  })
+  const feed = createRoute({
+    getParentRoute: () => parent,
+    path: '/feed',
+    component: () => <p>Nested feed</p>,
+  })
+  const search = createRoute({
+    getParentRoute: () => parent,
+    path: '/search',
+    component: () => <p>Nested search</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([parent.addChildren([feed, search])]),
+    native: {
+      rootKind: 'stack',
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/parent' } },
+    },
+  })
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Nested feed')
+  expect(screen.getAllByTestId('native-tabs')).toHaveLength(1)
   router.history.destroy()
 })
