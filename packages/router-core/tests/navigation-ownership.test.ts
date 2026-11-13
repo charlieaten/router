@@ -250,3 +250,27 @@ it('initializes an explicit destination in its selected child namespace atomical
     navigation.getSnapshot().stacks.search?.map((entry) => entry.href),
   ).toEqual(['/search', '/search/details'])
 })
+
+it('keeps the original flat visit blocker when another blocker rejects a prepared reuse', async () => {
+  const navigation = createNavigation<string>({
+    initialContainer: 'main',
+    containers: { main: { initialHref: '/' } },
+    prepare: async (entry) => ({ value: entry.href }),
+  })
+  await navigation.initialize()
+  await navigation.navigate({ href: '/a' })
+  const a = navigation.getActiveEntry()!
+  await navigation.navigate({ href: '/b' })
+  const b = navigation.getActiveEntry()!
+  navigation.block(a.key, () => true)
+  navigation.block(b.key, () => true)
+  expect(
+    await navigation.navigate({
+      href: '/a',
+      behavior: 'reuse',
+      state: { refreshed: true },
+    }),
+  ).toBe(false)
+  expect(navigation.isRemovalBlocked(a.key)).toBe(true)
+  expect(navigation.getActiveEntry()?.key).toBe(b.key)
+})
