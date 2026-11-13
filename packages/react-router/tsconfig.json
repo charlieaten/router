@@ -5,5 +5,11 @@
     "jsxImportSource": "react",
     "types": ["node"]
   },
-  "include": ["src", "tests", "vite.config.ts", "eslint.config.ts"]
+  "include": ["src", "tests", "vite.config.ts", "eslint.config.ts"],
+  "exclude": [
+    "src/**/*.native.ts",
+    "src/**/*.native.tsx",
+    "src/native",
+    "tests/native*.tsx"
+  ]
 }

@@ -1,0 +1,265 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Libre+Caslon+Display&display=swap');
+:root {
+  font-family: 'DM Sans', sans-serif;
+  color: #203d32;
+  background: #f7f5ef;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button,
+textarea {
+  font: inherit;
+}
+.app {
+  max-width: 1180px;
+  margin: auto;
+  padding: 0 48px;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 34px 0;
+  border-bottom: 1px solid #deded2;
+}
+.brand {
+  font-family: 'Libre Caslon Display', Georgia, serif;
+  font-size: 37px;
+  letter-spacing: -1px;
+}
+.brand span {
+  display: block;
+  font:
+    9px 'DM Sans',
+    sans-serif;
+  letter-spacing: 2.4px;
+  margin-top: 3px;
+}
+nav {
+  display: flex;
+  gap: 30px;
+  font-size: 13px;
+}
+nav a:hover {
+  color: #b05937;
+}
+main {
+  padding: 72px 0;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 2.1px;
+  color: #847f71;
+}
+h1 {
+  font-family: 'Libre Caslon Display', Georgia, serif;
+  font-weight: 400;
+  font-size: 84px;
+  line-height: 1.02;
+  letter-spacing: -2.5px;
+  max-width: 750px;
+  margin: 24px 0;
+}
+.intro {
+  font-size: 16px;
+  line-height: 1.7;
+  color: #7b776a;
+  max-width: 470px;
+}
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 26px;
+  margin-top: 46px;
+}
+.card {
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #deded2;
+  transition: transform 0.2s;
+}
+.card:hover {
+  transform: translateY(-4px);
+}
+.art {
+  height: 235px;
+  position: relative;
+  overflow: hidden;
+  background: #c5bda0;
+}
+.art span {
+  position: absolute;
+  left: 22px;
+  top: 20px;
+  font-size: 11px;
+  color: #fff;
+  letter-spacing: 2px;
+}
+.arch {
+  position: absolute;
+  width: 190px;
+  height: 260px;
+  border-radius: 100px 100px 0 0;
+  background: #7e896a;
+  left: 50%;
+  bottom: -60px;
+  transform: translateX(-50%);
+  box-shadow:
+    0 0 0 24px #ddd4bc,
+    0 0 0 48px #b7ad8c;
+}
+.art-1 {
+  background: #cfab91;
+}
+.art-1 .arch {
+  background: #a66348;
+  box-shadow:
+    0 0 0 24px #e1c3a8,
+    0 0 0 48px #be9075;
+}
+.card-body {
+  padding: 27px;
+}
+.card-body small {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #7b776a;
+}
+h2 {
+  font:
+    34px 'Libre Caslon Display',
+    Georgia,
+    serif;
+  margin: 12px 0;
+}
+.card-body p {
+  font-size: 13px;
+  line-height: 1.8;
+  color: #7b776a;
+  max-width: 340px;
+}
+.arrow {
+  display: block;
+  margin-top: 25px;
+  font-size: 12px;
+}
+aside {
+  padding: 24px 0;
+  margin-top: 25px;
+  font-size: 12px;
+  color: #7b776a;
+  line-height: 1.8;
+}
+aside strong {
+  color: #203d32;
+  margin-right: 7px;
+}
+footer {
+  border-top: 1px solid #deded2;
+  padding: 24px 0 32px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  letter-spacing: 1.6px;
+  color: #847f71;
+}
+footer span {
+  letter-spacing: 0;
+}
+.detail-panel {
+  max-width: 690px;
+  margin-top: 40px;
+  background: #eeece2;
+  padding: 32px;
+  border-radius: 8px;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+}
+button,
+.primary {
+  display: inline-block;
+  padding: 12px 20px;
+  background: #203d32;
+  color: #fff;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+}
+button:hover,
+.primary:hover {
+  background: #365a49;
+}
+label {
+  display: block;
+  margin: 24px 0 12px;
+  font-size: 12px;
+}
+textarea {
+  display: block;
+  width: 100%;
+  min-height: 130px;
+  border: 1px solid #d5d4c8;
+  border-radius: 6px;
+  background: #f7f5ef;
+  padding: 16px;
+  margin-bottom: 20px;
+  color: #203d32;
+  resize: vertical;
+}
+textarea:focus {
+  outline: 2px solid #7e896a;
+}
+*[role='alertdialog'] {
+  margin-top: 25px;
+  padding: 20px;
+  background: #e5d7c8;
+}
+*[role='alertdialog'] button {
+  margin-right: 10px;
+}
+@media (max-width: 650px) {
+  .app {
+    padding: 0 22px;
+  }
+  header {
+    align-items: flex-start;
+    gap: 24px;
+  }
+  nav {
+    gap: 14px;
+    font-size: 11px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .brand {
+    font-size: 30px;
+  }
+  h1 {
+    font-size: 58px;
+  }
+  main {
+    padding: 50px 0;
+  }
+  .cards {
+    grid-template-columns: 1fr;
+  }
+  .art {
+    height: 200px;
+  }
+  footer {
+    gap: 25px;
+    line-height: 1.8;
+  }
+}

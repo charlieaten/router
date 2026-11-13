@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.native.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "outDir": "dist/native",
+    "rootDir": "src"
+  }
+}

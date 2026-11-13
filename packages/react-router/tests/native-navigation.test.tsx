@@ -192,3 +192,46 @@ it('does not publish a blocker prompt after its async predicate was superseded',
   })
   expect(screen.queryByText('Prompt: blocked')).toBeNull()
 })
+
+it('does not echo the old tab with new provenance while the selected tab loads', async () => {
+  let release!: () => void
+  const root = createRootRoute({ component: Outlet })
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <div>Home</div>,
+  })
+  const search = createRoute({
+    getParentRoute: () => root,
+    path: '/search',
+    loader: () =>
+      new Promise<void>((resolve) => {
+        release = resolve
+      }),
+    component: () => <div>Search content</div>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home, search]),
+    native: {
+      initialContainer: 'feed',
+      containers: {
+        feed: { initialHref: '/' },
+        search: { initialHref: '/search' },
+      },
+    },
+  })
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Home')
+  fireEvent.click(screen.getByTestId('select-search'))
+  await waitFor(() => expect(release).toBeTypeOf('function'))
+  expect(screen.getByTestId('native-tabs').getAttribute('data-request')).toBe(
+    'feed:0',
+  )
+  await act(async () => {
+    release()
+  })
+  await screen.findByText('Search content')
+  expect(screen.getByTestId('native-tabs').getAttribute('data-request')).toBe(
+    'search:1',
+  )
+})

@@ -75,6 +75,4 @@ export function CatchNotFound(props: {
   )
 }
 
-export function DefaultGlobalNotFound() {
-  return <p>Not Found</p>
-}
+export { DefaultGlobalNotFound } from './DefaultGlobalNotFound'

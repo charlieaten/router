@@ -31,7 +31,8 @@
     "test:build": "publint --strict && attw --ignore-rules no-resolution --pack .",
     "test:unit": "vitest",
     "test:unit:dev": "pnpm run test:unit --watch",
-    "build": "vite build"
+    "build": "vite build",
+    "test:perf:navigation": "vitest bench --mode benchmark tests/navigation.bench.ts"
   },
   "type": "module",
   "types": "dist/esm/index.d.ts",
@@ -168,7 +169,17 @@
         "default": "./dist/cjs/scroll-restoration-script/server.cjs"
       }
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./navigation": {
+      "import": {
+        "types": "./dist/esm/navigation.d.ts",
+        "default": "./dist/esm/navigation.js"
+      },
+      "require": {
+        "types": "./dist/cjs/navigation.d.cts",
+        "default": "./dist/cjs/navigation.cjs"
+      }
+    }
   },
   "sideEffects": false,
   "files": [

@@ -298,7 +298,10 @@ export type NavigateOptions<
  * The NavigateOptions type is used to describe the options that can be used when describing a navigation action in TanStack Router.
  * @link [API Docs](https://tanstack.com/router/latest/docs/framework/react/api/router/NavigateOptionsType)
  */
-export interface NavigateOptionProps {
+/** Platform adapters may extend navigation intent without changing route types. */
+export interface NavigateOptionExtensions {}
+
+export interface NavigateOptionProps extends NavigateOptionExtensions {
   /**
    * If set to `true`, the router will scroll the element with an id matching the hash into view with default `ScrollIntoViewOptions`.
    * If set to `false`, the router will not scroll the element with an id matching the hash into view.

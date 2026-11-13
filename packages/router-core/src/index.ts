@@ -23,6 +23,7 @@ export type {
   AbsoluteToPath,
   RelativeToPathAutoComplete,
   NavigateOptions,
+  NavigateOptionExtensions,
   ToOptions,
   ToMaskOptions,
   ToSubOptions,

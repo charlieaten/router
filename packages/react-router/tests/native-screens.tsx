@@ -24,7 +24,37 @@ function Screen({
 }
 
 export const Stack = { Host, Screen, HeaderConfig: () => null }
-export const Tabs = { Host, Screen: Host }
+function TabsHost({
+  children,
+  navStateRequest,
+  onTabSelected,
+}: {
+  children?: React.ReactNode
+  navStateRequest: { selectedScreenKey: string; baseProvenance: number }
+  onTabSelected?: (event: {
+    nativeEvent: { selectedScreenKey: string; provenance: number }
+  }) => void
+}) {
+  return (
+    <div
+      data-testid="native-tabs"
+      data-request={`${navStateRequest.selectedScreenKey}:${navStateRequest.baseProvenance}`}
+    >
+      <button
+        data-testid="select-search"
+        onClick={() =>
+          onTabSelected?.({
+            nativeEvent: { selectedScreenKey: 'search', provenance: 1 },
+          })
+        }
+      >
+        Select search tab
+      </button>
+      {children}
+    </div>
+  )
+}
+export const Tabs = { Host: TabsHost, Screen: Host }
 export function FormSheet({
   isOpen,
   children,

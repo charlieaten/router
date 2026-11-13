@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "customConditions": ["react-native"],
+    "moduleSuffixes": [".native", ""],
+    "types": ["react", "node"],
+    "paths": {
+      "react-native": [
+        "./native/node_modules/react-native/types_generated/index.d.ts"
+      ]
+    }
+  },
+  "include": ["native/App.tsx"],
+  "exclude": []
+}
