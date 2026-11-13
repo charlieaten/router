@@ -861,3 +861,46 @@ it('retargets a child navigation when any borrowed ancestor dependency changes',
   expect(rootLoader).toHaveBeenCalledTimes(2)
   router.history.destroy()
 })
+
+it('reports Back availability for the owning visit rather than a deeper child navigator', async () => {
+  const { useCanGoBack } = await import('../dist/native/esm/index.native.js')
+  const root = createRootRoute({ component: Outlet })
+  const parent = createRoute({
+    getParentRoute: () => root,
+    path: '/parent',
+    component: () => (
+      <div>
+        <p>Parent back {String(useCanGoBack())}</p>
+        <Outlet />
+      </div>
+    ),
+    staticData: {
+      native: {
+        navigator: {
+          initialContainer: 'child',
+          containers: { child: { initialHref: '/parent/1' } },
+        },
+      },
+    },
+  })
+  const child = createRoute({
+    getParentRoute: () => parent,
+    path: '/$page',
+    component: () => <p>Child back {String(useCanGoBack())}</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([parent.addChildren([child])]),
+    native: {
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/parent' } },
+    },
+  })
+  const nav = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Parent back false')
+  const nested = nav.getSnapshot().stacks.main![0]!.navigator!
+  await act(() => nested.navigate({ href: '/parent/2' }))
+  await screen.findAllByText('Child back true')
+  await screen.findByText('Parent back false')
+  router.history.destroy()
+})
