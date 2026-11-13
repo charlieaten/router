@@ -6,7 +6,6 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import * as t from '@babel/types'
 import { glob } from 'tinyglobby'
-import { version } from '../package.json'
 import { parseAst } from '@tanstack/router-utils'
 import { createStartCompiler } from './start-compiler/host'
 import { createViteDevServerFnModuleSpecifierEncoder } from './vite/start-compiler-plugin/module-specifier'
@@ -14,6 +13,10 @@ import type {
   GenerateFunctionIdFnOptional,
   ServerFn,
 } from './start-compiler/types'
+
+const { version } = createRequire(import.meta.url)(
+  '@tanstack/start-plugin-core/package.json',
+) as { version: string }
 
 export interface NativeStartCompilerOptions {
   /** The Start web/server app root; both compilers must use the same root. */
