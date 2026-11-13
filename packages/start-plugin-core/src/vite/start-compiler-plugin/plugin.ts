@@ -594,6 +594,21 @@ export function startCompilerPlugin(
         async handler(id) {
           const parsed = parseIdQuery(id)
           const fnId = parsed.query.id
+          if (fnId && !serverFnsById[fnId] && opts.nativeEntries?.length) {
+            // Native-only clients do not traverse Vite's browser module graph.
+            // Discover only the explicitly configured, surviving client graph.
+            const native = await discoverNativeServerFunctions({
+              root,
+              entries: opts.nativeEntries,
+              mode: 'dev',
+              devServer: 'vite',
+              generateFunctionId: opts.generateFunctionId,
+            })
+            mergeServerFnsById(serverFnsById, native.functions)
+            for (const file of native.files) {
+              this.addWatchFile(file)
+            }
+          }
           if (fnId && serverFnsById[fnId]) {
             return `export {}`
           }

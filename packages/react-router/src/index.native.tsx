@@ -344,6 +344,7 @@ export {
 } from './native/context'
 export type {
   NativeNavigationOptions,
+  NativeNavigatorOptions,
   NativeNavigationContainer,
   NativeScreenOptions,
   NativeContainerRenderProps,

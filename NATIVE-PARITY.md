@@ -37,7 +37,9 @@ requests supply the configured backend's Origin when the caller did not supply
 one; the server's request-origin validation remains enabled.
 
 `serverFns.nativeEntries` in the Start build configuration discovers functions
-reachable only from native entry modules for the production server manifest.
+reachable only from native entry modules for the production server manifest and
+cold development-server ID validation. Development discovery uses the same Vite
+identities as Metro and retains the surviving-client-graph boundary.
 Native and web builds must share the same root and custom `generateFunctionId`
 configuration. A native development build talking to a production backend must
 select build-mode IDs in its Metro transformer.
@@ -52,9 +54,10 @@ Destination paths remain TanStack paths. Native presentation adds visit keys,
 container targets, and push/replace/reuse/popTo/reset intent. Repeated visits to
 one destination keep independent React state and loader execution lifetimes.
 
-The presentation controller supports static nested stacks, tabs, drawers, ordered
+The presentation controller supports nested stacks, tabs, drawers, ordered
 overlays, parent back bubbling, drawer closing on Back, entry state, and versioned
-restoration. Popping a branch or dismissing an overlay resets the retired
+restoration. Navigator templates can be static, but route-owned instances belong
+to a specific visit, including repeated visits to the same destination. Popping a branch or dismissing an overlay resets the retired
 subtree's child selections as well as its entries.
 
 Each visit owns a Router execution scope. Scope disposal retires pending work,
@@ -92,9 +95,6 @@ failures are reported while fresh navigation initialization remains available.
 
 ## Remaining substantial gaps
 
-- Per-visit nested navigator instances: the current nested container tree is
-  static. Two visits to a parent route cannot yet each instantiate an independent
-  child navigator with shared ancestor loader ownership.
 - A native gesture-driven drawer and default pager host.
 - Complete deep-link source integration, destination/container mapping, and
   stricter URL-prefix boundaries.
@@ -103,8 +103,86 @@ failures are reported while fresh navigation initialization remains available.
 - Production deployment verification for native-only function manifests across
   Vite and Rsbuild, plus release-mode native builds.
 
-The per-visit nesting gap needs a core architecture change: one presentation
-transaction should prepare a bounded parent execution and its child executions,
-with explicit leases for borrowed ancestor matches. Mounting a second full Router
-inside a route would duplicate ancestor loaders and lifecycle ownership and can
-recurse through the same layout. That is not an acceptable implementation.
+## Per-visit nested navigator ownership
+
+A route can declare a native navigator without changing its URL, loader, params,
+search validation, navigation calls, or use of `<Outlet />`:
+
+```tsx
+staticData: {
+  native: {
+    navigator: (match, location) => ({
+      initialContainer: 'feed',
+      backBehavior: 'none',
+      containers: {
+        feed: { initialHref: `/workspaces/${match.params.workspaceId}/feed/1` },
+        search: { initialHref: `/workspaces/${match.params.workspaceId}/search/1` },
+      },
+    }),
+  },
+}
+```
+
+The factory is accepted once per prepared parent execution. Its optional
+`initialLocation: { href, target }` maps incoming deep locations to a child stack.
+The example supplies this explicitly for feed/search deep links. Container IDs
+are local to an instance; two workspace visits can both have a `feed` stack.
+Explicit targets search the local namespace then owning ancestors. Navigating
+to a parent route or outside the current boundary bubbles to its owning stack.
+
+The implementation changes ownership in two places:
+
+- `router-core/navigation`: an entry owns its child navigator. All instances in
+  a tree share one transaction coordinator, key space, blocker registry, and
+  cancellation authority. Initial descendants prepare before the parent becomes
+  visible. Removing a parent checks descendant blockers and disposes descendants
+  before their parent. Stale instances cannot dispatch Back or cancel a new
+  transaction. Reuse preserves compatible nested entry keys and histories while
+  repreparing execution scopes; React state remains associated with those keys.
+- `router-core/execution-scope`: a parent execution ends at its navigator route.
+  Children borrow ancestor match data/context through an explicit lease and run
+  only the owned suffix of the route tree. Borrowing never transfers loader
+  flights or abort-controller ownership. Parent resources retire after the last
+  child lease releases, including when leave callbacks throw. Lifecycle callbacks
+  only run for owned matches. Child viewports start after their borrowed parent,
+  so ancestor layouts do not recursively render themselves.
+
+Root invalidation refreshes independent visits concurrently, but refreshes each
+parent before its children borrow updated data/context. Escaping loader redirects
+reject the bounded candidate and retarget after that presentation transaction
+settles. Ancestor not-found UI renders in the child viewport; failed parent
+loaders render their error UI without instantiating children.
+
+Snapshots are version 4, with structured nested objects and one outer JSON
+serialization. Restoration has a cumulative entry budget, byte limit, and nesting
+limit. It reconstructs route executions, not arbitrary React component state.
+In-memory drafts survive retained visits; persist important drafts explicitly.
+
+### Try the app demonstration
+
+Run `mise run native`, then tap **Try independent nested stacks** on Discover.
+
+1. Increment the parent counter. Push Feed page 2 and write a draft.
+2. Switch to the inner Search tab and push another page.
+3. Tap **Open another visit**. It opens the same workspace URL with a fresh
+   parent counter, execution ID, Feed selection, and child stacks.
+4. Use the top parent Back button to return. The first visit still has its
+   Search selection, both stack histories, parent counter, and retained drafts.
+5. Use the child Back button or header to pop inside that visit; at a child root,
+   Back bubbles to the owning parent when no local action remains.
+
+The web version uses the same route tree and ordinary URL/Outlet navigation.
+Native navigator definitions live in a platform-specific module; no separate
+native route tree is authored by hand. Generated trees remain generator-owned.
+
+## Per-visit ownership device verification
+
+Verified on iPhone 18 Pro simulator (iOS 27.2): open the workspace lab, push Feed
+and Search independently, enter a different draft on each second page, then open
+another visit to the same workspace URL. The second visit starts with fresh
+child stacks and parent counter. Native child-header Back pops only its child
+stack; native outer-header Back returns to the earlier visit with its counter,
+selected tab, stack positions, and drafts preserved. Inner edge-swipe Back and
+outer edge-swipe Back at the child root both completed without a crash.
+
+Android device behavior remains unverified in this change.

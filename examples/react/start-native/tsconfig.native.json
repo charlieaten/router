@@ -7,6 +7,9 @@
     "paths": {
       "react-native": [
         "./native/node_modules/react-native/types_generated/index.d.ts"
+      ],
+      "react-native-safe-area-context": [
+        "./native/node_modules/react-native-safe-area-context"
       ]
     }
   },

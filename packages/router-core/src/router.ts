@@ -1008,6 +1008,10 @@ export function runRouteLifecycle(
   if (nextEnd) {
     matches = matches.slice(0, nextEnd)
   }
+  if (router._execution?.start) {
+    previous = previous.slice(router._execution.start)
+    matches = matches.slice(router._execution.start)
+  }
   for (const match of previous) {
     if ((owner && router._tx !== owner) || activation?.signal?.aborted) {
       return
@@ -1171,6 +1175,12 @@ export class RouterCore<
 
   // Must build in constructor
   stores!: RouterStores<TRouteTree>
+  /** Opt-in execution ownership for independently presented nested routes. */
+  _execution?: {
+    prepare: (matches: Array<AnyRouteMatch>) => number
+    start: number
+    accepts: (location: ParsedLocation) => boolean
+  }
   private routeTreeSource?: RouteTreeSource
   private getStoreConfig!: GetStoreConfig
   batch!: (fn: () => void) => void

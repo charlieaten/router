@@ -1,5 +1,9 @@
 # Universal TanStack Start: native navigation experiment
 
+For the current implementation, per-visit navigator architecture, and remaining
+work, see [Native parity work](NATIVE-PARITY.md). This document records the initial
+experiment and includes historical limitations.
+
 ## Goal and baseline
 
 One application should retain TanStack's route definitions, typed params/search,
