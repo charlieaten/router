@@ -4,6 +4,8 @@ const config = getDefaultConfig(__dirname)
 const workspace = path.resolve(__dirname, '../../../..')
 
 config.watchFolders = [workspace]
+config.transformer.babelTransformerPath =
+  require.resolve('./start-transformer.mjs')
 config.resolver.unstable_conditionNames = ['require', 'react-native']
 // One React instance belongs to the native app, including shared workspace code.
 const previous = config.resolver.resolveRequest

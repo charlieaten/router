@@ -4,6 +4,7 @@ import type { RouterHistory } from '@tanstack/history'
 import type {
   AnyRoute,
   CreateRouterFn,
+  RouteTreeSource,
   RouterConstructorOptions,
   TrailingSlashOption,
 } from '@tanstack/router-core'
@@ -113,7 +114,8 @@ export class Router<
       TRouterHistory,
       TDehydrated
     >,
+    routeTreeSource?: RouteTreeSource,
   ) {
-    super(options, getStoreFactory)
+    super(options, getStoreFactory, routeTreeSource)
   }
 }

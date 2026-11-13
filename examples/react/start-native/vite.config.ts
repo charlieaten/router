@@ -5,5 +5,11 @@ import { nitro } from 'nitro/vite'
 
 export default defineConfig({
   resolve: { dedupe: ['react', 'react-dom'] },
-  plugins: [tanstackStart(), react(), nitro()],
+  plugins: [
+    tanstackStart({
+      serverFns: { nativeEntries: ['src/data.ts', 'src/native-only.ts'] },
+    }),
+    react(),
+    nitro(),
+  ],
 })

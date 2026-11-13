@@ -1,12 +1,38 @@
 import * as React from 'react'
-import { BackHandler, Linking, Text, View } from 'react-native'
-import { FormSheet, Stack, Tabs } from 'react-native-screens'
+import {
+  AppState,
+  BackHandler,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  Text,
+  View,
+} from 'react-native'
+import {
+  ContainedModalOverContent,
+  ContainedModalProvider,
+  FormSheet,
+  Stack,
+  Tabs,
+} from 'react-native-screens'
 import { Matches } from './Matches'
 import { RouterContextProvider } from './RouterProviderShared'
 import { entryContext } from './native/context'
-import { getNativeNavigation, getScreenOptions } from './native/controller'
-import type { AnyRouter } from '@tanstack/router-core'
-import type { NativeEntry, NativeNavigation } from './native/controller'
+import {
+  emitNativeNavigationEvent,
+  flushNativeNavigation,
+  getNativeNavigation,
+  getScreenOptions,
+} from './native/controller'
+import type { RouterProps } from './RouterProviderShared'
+import type { AnyRouter, RegisteredRouter } from '@tanstack/router-core'
+import type { NavigationSnapshot } from '@tanstack/router-core/navigation'
+import type {
+  NativeContainerRenderProps,
+  NativeEntry,
+  NativeNavigation,
+} from './native/controller'
 
 function Entry({ entry, active }: { entry: NativeEntry; active: boolean }) {
   return (
@@ -20,66 +46,99 @@ function Entry({ entry, active }: { entry: NativeEntry; active: boolean }) {
   )
 }
 
+function useRetained<T extends { key: string }>(
+  items: Array<T>,
+  retain?: (item: T) => boolean,
+) {
+  const [retained, setRetained] = React.useState(items)
+  const nativeDismissed = React.useRef(new Set<string>())
+  const current = new Map(items.map((item) => [item.key, item]))
+  const keys = new Set(retained.map((item) => item.key))
+  const rendered = [
+    ...retained.map((item) => current.get(item.key) ?? item),
+    ...items.filter((item) => !keys.has(item.key)),
+  ].filter(
+    (item) =>
+      current.has(item.key) ||
+      (!nativeDismissed.current.has(item.key) && retain?.(item) !== false),
+  )
+  React.useLayoutEffect(() => {
+    setRetained((previous) => {
+      const current = new Map(items.map((item) => [item.key, item]))
+      const keys = new Set(previous.map((item) => item.key))
+      return [
+        ...previous.map((item) => current.get(item.key) ?? item),
+        ...items.filter((item) => !keys.has(item.key)),
+      ].filter((item) => current.has(item.key) || retain?.(item) !== false)
+    })
+  }, [items, retain])
+  const forget = (key: string) => {
+    nativeDismissed.current.delete(key)
+    setRetained((previous) => previous.filter((item) => item.key !== key))
+  }
+  return {
+    rendered,
+    current,
+    forget,
+    acknowledge: (key: string) => nativeDismissed.current.add(key),
+  }
+}
+
 function NativeStack({
   entries,
   navigation,
   selected,
+  onError,
 }: {
   entries: Array<NativeEntry>
   navigation: NativeNavigation
   selected: boolean
+  onError: (error: unknown) => void
 }) {
-  // Keep outgoing React trees until native acknowledges detachment. Logical
-  // history changes and native animation completion are separate lifetimes.
-  const [retained, setRetained] = React.useState(entries)
-  const current = new Map(
-    entries.map((entry, index) => [entry.key, { entry, index }]),
-  )
-  const retainedKeys = new Set(retained.map((entry) => entry.key))
-  const rendered = [
-    ...retained.map((entry) => current.get(entry.key)?.entry ?? entry),
-    ...entries.filter((entry) => !retainedKeys.has(entry.key)),
-  ]
-  React.useLayoutEffect(() => {
-    setRetained((previous) => {
-      const current = new Map(entries.map((entry) => [entry.key, entry]))
-      const keys = new Set(previous.map((entry) => entry.key))
-      return [
-        ...previous.map((entry) => current.get(entry.key) ?? entry),
-        ...entries.filter((entry) => !keys.has(entry.key)),
-      ]
-    })
-  }, [entries])
-  const forget = (key: string) => {
-    const stillAttached = Object.values(navigation.getSnapshot().stacks)
-      .flat()
-      .some((entry) => entry.key === key)
-    if (!stillAttached) {
-      setRetained((current) => current.filter((entry) => entry.key !== key))
-    }
-  }
+  const { rendered, current, forget, acknowledge } = useRetained(entries)
   return (
     <Stack.Host>
       {rendered.map((entry) => {
-        const index = current.get(entry.key)?.index ?? -1
+        const index = entries.findIndex((item) => item.key === entry.key)
         const options = getScreenOptions(entry)
+        const event = (
+          type: 'transitionStart' | 'transitionEnd',
+          closing: boolean,
+        ) =>
+          emitNativeNavigationEvent(navigation, {
+            type,
+            target: entry.key,
+            closing,
+          })
         return (
           <Stack.Screen
+            {...options.stack}
             key={entry.key}
             screenKey={entry.key}
             activityMode={current.has(entry.key) ? 'attached' : 'detached'}
             preventNativeDismiss={navigation.isRemovalBlocked(entry.key)}
+            onWillAppear={() => event('transitionStart', false)}
+            onDidAppear={() => event('transitionEnd', false)}
+            onWillDisappear={() => event('transitionStart', true)}
+            onDidDisappear={() => event('transitionEnd', true)}
             onNativeDismiss={(key) => {
+              // UIKit already popped it. Remove the React view without sending
+              // another activityMode=detached command during reconciliation.
+              acknowledge(key)
               void navigation
                 .acknowledgeNativeDismiss(key)
                 .then(() => forget(key))
+                .catch(onError)
             }}
             onNativeDismissPrevented={() => {
-              void navigation.back({ target: entry.container })
+              void navigation.back({ target: entry.container }).catch(onError)
             }}
             onDismiss={forget}
           >
-            <Stack.HeaderConfig title={options.title ?? entry.href} />
+            <Stack.HeaderConfig
+              title={options.title ?? entry.href}
+              {...options.header}
+            />
             <Entry
               entry={entry}
               active={
@@ -96,7 +155,413 @@ function NativeStack({
   )
 }
 
-export function RouterProvider({ router }: { router: AnyRouter }) {
+function BranchStack({
+  items,
+  selected,
+  onBack,
+}: {
+  items: NativeContainerRenderProps['children']
+  selected: string
+  onBack: (native: boolean) => Promise<boolean>
+}) {
+  const { rendered, current, forget, acknowledge } = useRetained(items)
+  return (
+    <Stack.Host>
+      {rendered.map((item) => (
+        <Stack.Screen
+          key={item.key}
+          screenKey={item.key}
+          activityMode={current.has(item.key) ? 'attached' : 'detached'}
+          preventNativeDismiss={item.preventDismiss}
+          onNativeDismissPrevented={() => {
+            void onBack(false)
+          }}
+          onNativeDismiss={(key) => {
+            acknowledge(key)
+            void onBack(true).then(() => forget(key))
+          }}
+          onDismiss={forget}
+        >
+          <Stack.HeaderConfig hidden />
+          {item.content}
+        </Stack.Screen>
+      ))}
+    </Stack.Host>
+  )
+}
+
+function TabsHost({
+  items,
+  selected,
+  onSelect,
+}: {
+  items: NativeContainerRenderProps['children']
+  selected: string
+  onSelect: (id: string) => void
+}) {
+  const provenance = React.useRef(0)
+  return (
+    <Tabs.Host
+      navStateRequest={{
+        selectedScreenKey: selected,
+        baseProvenance: provenance.current,
+      }}
+      rejectStaleNavStateUpdates
+      onTabSelected={(event) => {
+        provenance.current = event.nativeEvent.provenance
+        if (event.nativeEvent.selectedScreenKey !== selected) {
+          onSelect(event.nativeEvent.selectedScreenKey)
+        }
+      }}
+      onTabSelectionRejected={(event) => {
+        provenance.current = event.nativeEvent.provenance
+        if (event.nativeEvent.rejectionReason === 'stale') {
+          onSelect(event.nativeEvent.selectedScreenKey)
+        }
+      }}
+    >
+      {items.map((item) => (
+        <Tabs.Screen
+          {...item.tab}
+          key={item.key}
+          screenKey={item.key}
+          title={item.title}
+          specialEffects={{
+            repeatedTabSelection: { popToRoot: false, scrollToTop: false },
+          }}
+        >
+          {item.content}
+        </Tabs.Screen>
+      ))}
+    </Tabs.Host>
+  )
+}
+
+function DrawerHost(props: NativeContainerRenderProps) {
+  return (
+    <View style={{ flex: 1 }}>
+      {props.children.map((child) => (
+        <View
+          key={child.key}
+          style={{
+            flex: 1,
+            display: child.key === props.selected ? 'flex' : 'none',
+          }}
+        >
+          {child.content}
+        </View>
+      ))}
+      <Modal
+        visible={props.open}
+        transparent
+        animationType="fade"
+        onRequestClose={() => props.onOpenChange(false)}
+      >
+        <View
+          style={{ flex: 1, flexDirection: 'row', backgroundColor: '#0005' }}
+        >
+          <View
+            accessibilityViewIsModal
+            style={{
+              width: 300,
+              backgroundColor: '#f7f5ef',
+              padding: 24,
+              paddingTop: 70,
+              gap: 20,
+            }}
+          >
+            {props.children.map((child) => (
+              <Pressable
+                key={child.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected: child.key === props.selected }}
+                onPress={() => props.onSelect(child.key)}
+              >
+                <Text>{child.title}</Text>
+              </Pressable>
+            ))}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => props.onOpenChange(false)}
+            >
+              <Text>Close navigation</Text>
+            </Pressable>
+          </View>
+          <Pressable
+            style={{ flex: 1 }}
+            accessibilityLabel="Close navigation"
+            onPress={() => props.onOpenChange(false)}
+          />
+        </View>
+      </Modal>
+    </View>
+  )
+}
+
+function NativeContainer({
+  id,
+  router,
+  navigation,
+  state,
+  selected,
+  onError,
+}: {
+  id?: string
+  router: AnyRouter
+  navigation: NativeNavigation
+  state: NavigationSnapshot<AnyRouter>
+  selected: boolean
+  onError: (error: unknown) => void
+}) {
+  const definitions = router.options.native!.containers
+  const children = navigation.getChildren(id)
+  if (id && !children.length) {
+    return (
+      <NativeStack
+        entries={state.stacks[id]!}
+        navigation={navigation}
+        selected={selected}
+        onError={onError}
+      />
+    )
+  }
+  const selectedChild = id ? state.selectedChildren[id]! : state.selected
+  const kind =
+    (id ? definitions[id]?.kind : router.options.native?.rootKind) ?? 'tabs'
+  const ordered =
+    kind === 'stack'
+      ? (state.childHistory[id ?? '$root'] ?? [selectedChild])
+      : children
+  const items = ordered.map((key) => ({
+    key,
+    title: definitions[key]!.title ?? key,
+    tab: definitions[key]!.tab,
+    preventDismiss: Object.values(state.stacks)
+      .flat()
+      .some((entry) => {
+        let id = entry.container
+        while (id !== key) {
+          const parent = definitions[id]?.parent
+          if (!parent) {
+            return false
+          }
+          id = parent
+        }
+        return navigation.isRemovalBlocked(entry.key)
+      }),
+    content: (
+      <NativeContainer
+        id={key}
+        router={router}
+        navigation={navigation}
+        state={state}
+        selected={selected && selectedChild === key}
+        onError={onError}
+      />
+    ),
+  }))
+  const props: NativeContainerRenderProps = {
+    id: id ?? '$root',
+    kind,
+    selected: selectedChild,
+    children: items,
+    onSelect: (key) => {
+      void navigation.select(key).catch(onError)
+    },
+    open: state.openDrawers.includes(id ?? '$root'),
+    onOpenChange: (open) => {
+      void navigation.setDrawerOpen(id ?? '$root', open).catch(onError)
+    },
+  }
+  const Custom = router.options.native?.renderContainer
+  if (Custom) {
+    return <Custom {...props} />
+  }
+  if (kind === 'custom') {
+    throw new Error('Custom navigation containers require renderContainer')
+  }
+  if (kind === 'drawer') {
+    return <DrawerHost {...props} />
+  }
+  if (kind === 'stack') {
+    return (
+      <BranchStack
+        items={items}
+        selected={selectedChild}
+        onBack={(native) =>
+          navigation.back({ ignoreBlocker: native }).catch((error) => {
+            onError(error)
+            return false
+          })
+        }
+      />
+    )
+  }
+  return (
+    <TabsHost
+      items={items}
+      selected={selectedChild}
+      onSelect={props.onSelect}
+    />
+  )
+}
+
+interface Overlay {
+  key: string
+  id: string
+  state: NavigationSnapshot<AnyRouter>
+  entry: NativeEntry
+  container: string
+}
+function retainOverlay(item: Overlay) {
+  const presentation = getScreenOptions(item.entry).presentation
+  return (
+    Platform.OS !== 'android' ||
+    !['modal', 'fullScreenModal', 'transparentModal'].includes(
+      presentation ?? '',
+    )
+  )
+}
+function NativeOverlays({
+  items,
+  router,
+  navigation,
+  onError,
+}: {
+  items: Array<Overlay>
+  router: AnyRouter
+  navigation: NativeNavigation
+  onError: (error: unknown) => void
+}) {
+  const { rendered, current, forget } = useRetained(items, retainOverlay)
+  const render = (index: number): React.ReactNode => {
+    const item = rendered[index]
+    if (!item) {
+      return null
+    }
+    const active = current.get(item.key)
+    const options = getScreenOptions(item.entry)
+    const close = () => {
+      void navigation
+        .acknowledgeNativeDismiss(item.entry.key)
+        .then((removed) => {
+          if (removed) {
+            forget(item.key)
+          }
+        })
+        .catch(onError)
+    }
+    const requestClose = () => {
+      void navigation.back({ target: item.container }).catch(onError)
+    }
+    const blocked = Object.values((active?.state ?? item.state).stacks)
+      .flat()
+      .some((entry) => {
+        let id = entry.container
+        while (id !== item.id) {
+          const parent = router.options.native!.containers[id]?.parent
+          if (!parent) {
+            return false
+          }
+          id = parent
+        }
+        return navigation.isRemovalBlocked(entry.key)
+      })
+    const content = (
+      <View style={{ flex: 1 }}>
+        <NativeContainer
+          id={item.id}
+          router={router}
+          navigation={navigation}
+          state={active?.state ?? item.state}
+          selected={!!active}
+          onError={onError}
+        />
+        {render(index + 1)}
+      </View>
+    )
+    const event = (
+      type: 'transitionStart' | 'transitionEnd',
+      closing: boolean,
+    ) =>
+      emitNativeNavigationEvent(navigation, {
+        type,
+        target: item.entry.key,
+        closing,
+      })
+    if (!options.presentation || options.presentation === 'formSheet') {
+      return (
+        <FormSheet
+          key={item.key}
+          {...options.sheet}
+          isOpen={!!active}
+          preventNativeDismiss={blocked}
+          onWillAppear={() => event('transitionStart', false)}
+          onDidAppear={() => event('transitionEnd', false)}
+          onWillDisappear={() => event('transitionStart', true)}
+          onDidDisappear={() => event('transitionEnd', true)}
+          onDismiss={() => forget(item.key)}
+          onNativeDismiss={() => {
+            close()
+            forget(item.key)
+          }}
+          onNativeDismissPrevented={requestClose}
+        >
+          {content}
+        </FormSheet>
+      )
+    }
+    if (
+      options.presentation === 'containedModal' ||
+      options.presentation === 'containedTransparentModal'
+    ) {
+      return (
+        <ContainedModalOverContent
+          key={item.key}
+          isOpen={!!active}
+          targetContainerId="tanstack-root"
+          onDidDisappear={() => forget(item.key)}
+          onPresentationRejected={requestClose}
+        >
+          {content}
+        </ContainedModalOverContent>
+      )
+    }
+    return (
+      <Modal
+        key={item.key}
+        {...options.modal}
+        visible={!!active}
+        transparent={options.presentation === 'transparentModal'}
+        presentationStyle={
+          options.presentation === 'fullScreenModal'
+            ? 'fullScreen'
+            : options.presentation === 'transparentModal'
+              ? 'overFullScreen'
+              : 'pageSheet'
+        }
+        animationType={
+          options.presentation === 'transparentModal' ? 'fade' : 'slide'
+        }
+        allowSwipeDismissal={!blocked}
+        onRequestClose={requestClose}
+        onShow={() => event('transitionEnd', false)}
+        onDismiss={() => {
+          forget(item.key)
+          event('transitionEnd', true)
+        }}
+      >
+        {content}
+      </Modal>
+    )
+  }
+  return render(0)
+}
+
+export function RouterProvider<
+  TRouter extends AnyRouter = RegisteredRouter,
+  TDehydrated extends Record<string, any> = Record<string, any>,
+>({ router, ...rest }: RouterProps<TRouter, TDehydrated>) {
   const navigation = getNativeNavigation(router)
   const state = React.useSyncExternalStore(
     navigation.subscribe,
@@ -104,48 +569,23 @@ export function RouterProvider({ router }: { router: AnyRouter }) {
     navigation.getSnapshot,
   )
   const [error, setError] = React.useState<unknown>()
-  const provenance = React.useRef(0)
-  const definitions = router.options.native?.containers ?? {
-    main: { initialHref: '/' },
-  }
-  const tabs = Object.entries(definitions).filter(([, item]) => !item.overlay)
-  const overlays = Object.entries(definitions).filter(
-    ([, item]) => item.overlay,
-  )
-
   React.useEffect(() => {
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
-      const entry = navigation.getActiveEntry()
-      if (!entry) {
-        return false
-      }
-      const snapshot = navigation.getSnapshot()
-      if (
-        entry.container === snapshot.selected &&
-        snapshot.stacks[entry.container]!.length <= 1
-      ) {
+      if (!navigation.canGoBack()) {
         return false
       }
       void navigation.back().catch(setError)
       return true
     })
     const open = (url: string) => {
-      try {
-        const prefix = router.options.native?.linking?.prefixes.find((prefix) =>
-          url.startsWith(prefix),
-        )
-        if (!prefix) {
-          return
-        }
-        const destination = `/${url.slice(prefix.length).replace(/^\/+/, '')}`
-        void router
-          .navigate({
-            to: destination,
-          } as never)
-          .catch(setError)
-      } catch (error) {
-        setError(error)
+      const prefix = router.options.native?.linking?.prefixes.find((prefix) =>
+        url.startsWith(prefix),
+      )
+      if (!prefix) {
+        return
       }
+      const destination = `/${url.slice(prefix.length).replace(/^\/+/, '')}`
+      void router.navigate({ to: destination } as never).catch(setError)
     }
     void navigation
       .initialize()
@@ -157,12 +597,26 @@ export function RouterProvider({ router }: { router: AnyRouter }) {
       })
       .catch(setError)
     const link = Linking.addEventListener('url', ({ url }) => open(url))
+    let previous = AppState.currentState
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        void flushNativeNavigation(navigation).catch(setError)
+      }
+      if (
+        state === 'active' &&
+        previous !== 'active' &&
+        router.options.native?.invalidateOnResume
+      ) {
+        void router.invalidate().catch(setError)
+      }
+      previous = state
+    })
     return () => {
       back.remove()
       link.remove()
+      appState.remove()
     }
   }, [router, navigation])
-
   if (error) {
     return (
       <Text accessibilityRole="alert">
@@ -170,68 +624,33 @@ export function RouterProvider({ router }: { router: AnyRouter }) {
       </Text>
     )
   }
-
+  const overlays: Array<Overlay> = state.overlays.flatMap((id) => {
+    let container = id
+    while (navigation.getChildren(container).length) {
+      container = state.selectedChildren[container]!
+    }
+    const entry = state.stacks[container]![0]
+    return entry ? [{ key: id, id, container, entry, state }] : []
+  })
   return (
-    <RouterContextProvider router={router}>
-      <View style={{ flex: 1 }}>
-        <Tabs.Host
-          navStateRequest={{
-            selectedScreenKey: state.selected,
-            baseProvenance: provenance.current,
-          }}
-          rejectStaleNavStateUpdates
-          onTabSelected={(event) => {
-            provenance.current = event.nativeEvent.provenance
-            if (event.nativeEvent.selectedScreenKey !== state.selected) {
-              void navigation
-                .select(event.nativeEvent.selectedScreenKey)
-                .catch(setError)
-            }
-          }}
-          onTabSelectionRejected={(event) => {
-            provenance.current = event.nativeEvent.provenance
-            if (event.nativeEvent.rejectionReason === 'stale') {
-              void navigation
-                .select(event.nativeEvent.selectedScreenKey)
-                .catch(setError)
-            }
-          }}
-        >
-          {tabs.map(([id, definition]) => (
-            <Tabs.Screen
-              key={id}
-              screenKey={id}
-              title={definition.title ?? id}
-              specialEffects={{
-                repeatedTabSelection: { popToRoot: false, scrollToTop: false },
-              }}
-            >
-              <NativeStack
-                entries={state.stacks[id]!}
-                navigation={navigation}
-                selected={state.selected === id}
-              />
-            </Tabs.Screen>
-          ))}
-        </Tabs.Host>
-        {overlays.flatMap(([id]) =>
-          state.stacks[id]!.map((entry) => (
-            <FormSheet
-              key={entry.key}
-              isOpen
-              preventNativeDismiss={navigation.isRemovalBlocked(entry.key)}
-              onNativeDismiss={() => {
-                void navigation.acknowledgeNativeDismiss(entry.key)
-              }}
-              onNativeDismissPrevented={() => {
-                void navigation.back({ target: entry.container })
-              }}
-            >
-              <Entry entry={entry} active />
-            </FormSheet>
-          )),
-        )}
-      </View>
+    <RouterContextProvider router={router} {...rest}>
+      <ContainedModalProvider containerId="tanstack-root" style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
+          <NativeContainer
+            router={router}
+            navigation={navigation}
+            state={state}
+            selected
+            onError={setError}
+          />
+          <NativeOverlays
+            items={overlays}
+            router={router}
+            navigation={navigation}
+            onError={setError}
+          />
+        </View>
+      </ContainedModalProvider>
     </RouterContextProvider>
   )
 }

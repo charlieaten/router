@@ -97,7 +97,13 @@
         "default": "./dist/esm/rsbuild/types.js"
       }
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./metro": {
+      "import": {
+        "types": "./dist/esm/metro.d.ts",
+        "default": "./dist/esm/metro.js"
+      }
+    }
   },
   "sideEffects": false,
   "files": [

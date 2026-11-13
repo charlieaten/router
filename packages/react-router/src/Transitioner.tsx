@@ -21,27 +21,45 @@ export function Transitioner({
   t: React.Dispatch<React.SetStateAction<AnyRouter | undefined>>
 }) {
   const router = useRouter()
-  const acknowledgement = (router._rendered ??= [])
+  const acknowledgement = React.useMemo(
+    () => (router._rendered ??= []),
+    [router],
+  )
   const mounted =
     process.env.NODE_ENV !== 'production'
       ? // eslint-disable-next-line react-hooks/rules-of-hooks
         React.useRef(false)
       : undefined
 
-  router.startTransition = (fn, expected) =>
-    new Promise((resolve) => {
-      settleOwner(acknowledgement, false)
-      acknowledgement.push(expected, resolve)
-      t(router)
-      React.startTransition(fn)
-    })
-
+  const transition = React.useCallback<AnyRouter['startTransition']>(
+    (fn, expected) =>
+      new Promise((resolve) => {
+        settleOwner(acknowledgement, false)
+        acknowledgement.push(expected, resolve)
+        t(router)
+        React.startTransition(fn)
+      }),
+    [acknowledgement, router, t],
+  )
   // Subscribe before canonicalizing so the initial URL has exactly one load.
   useLayoutEffect(() => {
+    router.startTransition = transition
     const unsub = router.history.subscribe(router.load)
+    const release = () => {
+      unsub()
+      if (router.startTransition === transition) {
+        // A hidden Activity or unmounted renderer cannot acknowledge a paint.
+        // Keep background loader publications independent of its next render.
+        router.startTransition = async (fn) => {
+          fn()
+          return false
+        }
+        settleOwner(acknowledgement, false)
+      }
+    }
 
     if (mounted?.current) {
-      return unsub
+      return release
     }
     if (mounted) {
       mounted.current = true
@@ -70,7 +88,7 @@ export function Transitioner({
         replace: true,
         ignoreBlocker: true,
       })
-      return unsub
+      return release
     }
 
     const resolvedLocation = router.stores.resolvedLocation.get()
@@ -90,10 +108,10 @@ export function Transitioner({
       router.load({ sync: true }).catch(console.error)
     }
 
-    return unsub
+    return release
     // `mounted` exists only in development and is a stable ref when present.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router, router.history])
+  }, [router, router.history, transition, acknowledgement])
 
   return null
 }

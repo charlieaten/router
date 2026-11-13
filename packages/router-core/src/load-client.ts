@@ -2568,3 +2568,67 @@ export async function hydrate(router: AnyRouter): Promise<void> {
     }
   })
 }
+
+/** Retire authority before releasing public signals, which can reenter routing. */
+export function disposeClientExecution(
+  router: AnyRouter,
+  notifyLeave = true,
+): void {
+  const tx = router._tx
+  const preflight = router._preflight
+  const preloads = router._preloads
+  const flights = router._flights
+  const committed = router._committed
+  const controllers = new Set<AbortController>()
+  if (tx) {
+    controllers.add(tx[0])
+  }
+  if (preflight) {
+    controllers.add(preflight)
+  }
+  for (const controller of preloads?.keys() ?? []) {
+    controllers.add(controller)
+  }
+  for (const flight of flights?.values() ?? []) {
+    controllers.add(flight[1])
+  }
+  const matches = new Set([
+    ...committed,
+    ...(tx?.[3] ?? []),
+    ...router._cache.values(),
+    ...Array.from(preloads?.values() ?? []).flat(),
+  ])
+  router._tx = undefined
+  router._preflight = undefined
+  router._preloads = undefined
+  router._flights = undefined
+  router._committed = []
+  router._cache.clear()
+  clearTimeout(router._pending?.[3])
+  router._pending = undefined
+  const rendered = router._rendered
+  router._rendered = undefined
+  rendered?.[1]?.(false)
+  const commit = router._commitPromise
+  router._commitPromise = undefined
+  commit?.resolve()
+  router._pendingLocation = undefined
+  for (const match of matches as Set<WorkMatch>) {
+    if (match._flight) {
+      controllers.add(match._flight[1])
+      match._flight = undefined
+    }
+  }
+  for (const controller of controllers) {
+    controller.abort()
+  }
+  try {
+    if (notifyLeave) {
+      runRouteLifecycle(router, committed, [], undefined, 0, undefined, {
+        force: true,
+      })
+    }
+  } finally {
+    router.subscribers.clear()
+  }
+}

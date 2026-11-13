@@ -475,6 +475,8 @@ export interface RouterOptions<
     ';' | ':' | '@' | '&' | '=' | '+' | '$' | ','
   >
 
+  /** Presentation adapters may explicitly own lifecycle activation for prepared visits. */
+  routeLifecycle?: 'automatic' | 'manual'
   defaultRemountDeps?: DefaultRemountDepsFn<TRouteTree>
 
   /**
@@ -994,7 +996,11 @@ export function runRouteLifecycle(
   previousEnd: number | undefined,
   nextEnd: number,
   owner?: LoadTransaction,
+  activation?: { force: true; signal?: AbortSignal },
 ): void {
+  if (router.options.routeLifecycle === 'manual' && !activation?.force) {
+    return
+  }
   // Zero or undefined means the full branch; copy only at a fallback.
   if (previousEnd) {
     previous = previous.slice(0, previousEnd)
@@ -1003,7 +1009,7 @@ export function runRouteLifecycle(
     matches = matches.slice(0, nextEnd)
   }
   for (const match of previous) {
-    if (owner && router._tx !== owner) {
+    if ((owner && router._tx !== owner) || activation?.signal?.aborted) {
       return
     }
     if (!matches.some((candidate) => candidate.routeId === match.routeId)) {
@@ -1013,7 +1019,7 @@ export function runRouteLifecycle(
     }
   }
   for (const match of matches) {
-    if (owner && router._tx !== owner) {
+    if ((owner && router._tx !== owner) || activation?.signal?.aborted) {
       return
     }
     const route = (router.routesById as Record<string, AnyRoute>)[
@@ -1044,6 +1050,10 @@ type RouteTreeCaches<TRouteTree extends AnyRoute> =
   ProcessRouteTreeResult<TRouteTree> & {
     resolvePathCache: SieveCache<string, string>
   }
+
+export type RouteTreeSource = (
+  router: AnyRouter,
+) => RouteTreeCaches<any> | undefined
 
 export type CreateRouterFn = <
   TRouteTree extends AnyRoute,
@@ -1161,6 +1171,7 @@ export class RouterCore<
 
   // Must build in constructor
   stores!: RouterStores<TRouteTree>
+  private routeTreeSource?: RouteTreeSource
   private getStoreConfig!: GetStoreConfig
   batch!: (fn: () => void) => void
 
@@ -1210,7 +1221,9 @@ export class RouterCore<
       TDehydrated
     >,
     getStoreConfig: GetStoreConfig,
+    routeTreeSource?: RouteTreeSource,
   ) {
+    this.routeTreeSource = routeTreeSource
     this.getStoreConfig = getStoreConfig
     if (options.pathParamsAllowedCharacters?.length) {
       this.pathParamsDecoder = compileDecodeCharMap(
@@ -1335,7 +1348,10 @@ export class RouterCore<
     ) {
       this.routeTree = this.options.routeTree as TRouteTree
       let processRouteTreeResult: RouteTreeCaches<TRouteTree>
-      if (
+      const source = this.routeTreeSource?.(this as AnyRouter)
+      if (source) {
+        processRouteTreeResult = source as RouteTreeCaches<TRouteTree>
+      } else if (
         process.env.NODE_ENV !== 'development' &&
         (isServer ?? this.isServer) &&
         globalThis.__TSR_CACHE__ &&

@@ -19,7 +19,21 @@
     "react-native-screens": "5.0.0-beta.1",
     "react-native-safe-area-context": "~5.11.1",
     "react": "19.3.0",
-    "zod": "^4.5.4"
+    "zod": "^4.5.4",
+    "@tanstack/react-start": "^1.169.6"
+  },
+  "nx": {
+    "targets": {
+      "build:ios": {
+        "dependsOn": [
+          "^build"
+        ],
+        "cache": false,
+        "outputs": [
+          "{projectRoot}/dist"
+        ]
+      }
+    }
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",

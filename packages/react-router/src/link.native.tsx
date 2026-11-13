@@ -1,5 +1,10 @@
 import * as React from 'react'
 import { Pressable, Text } from 'react-native'
+import {
+  deepEqual,
+  getUrlScheme,
+  removeTrailingSlash,
+} from '@tanstack/router-core'
 import { useRouter } from './useRouter'
 import { useRouterState } from './useRouterState'
 import { useNavigate } from './useNavigate.native'
@@ -24,7 +29,12 @@ export type ActiveLinkOptions<
 > = LinkOptions<TRouter, TFrom, TTo, TMaskFrom, TMaskTo> & {
   activeProps?: Partial<PressableProps>
   inactiveProps?: Partial<PressableProps>
-  activeOptions?: { exact?: boolean; includeSearch?: boolean }
+  activeOptions?: {
+    exact?: boolean
+    includeSearch?: boolean
+    includeHash?: boolean
+    explicitUndefined?: boolean
+  }
 }
 
 export type LinkProps<
@@ -88,33 +98,124 @@ export interface LinkComponentRoute<TDefaultFrom extends string = string> {
   ): React.ReactElement
 }
 
+const routingProps = new Set([
+  'to',
+  'from',
+  'params',
+  'search',
+  'hash',
+  'state',
+  'href',
+  'mask',
+  'replace',
+  'resetScroll',
+  'hashScrollIntoView',
+  'viewTransition',
+  'ignoreBlocker',
+  'reloadDocument',
+  'preload',
+  'preloadDelay',
+  'preloadIntentProximity',
+  'activeOptions',
+  'activeProps',
+  'inactiveProps',
+  'target',
+  'stackBehavior',
+  'stackMatch',
+  'stackFallback',
+  'entryId',
+  'children',
+  'ref',
+  '_asChild',
+])
+
 export function useLinkProps(
   options: LinkProps,
 ): PressableProps & { isActive: boolean } {
   const router = useRouter()
   const navigate = useNavigate()
-  const href = router.buildLocation(options as never).href
-  const current = useRouterState({ select: (state) => state.location.href })
-  const isActive = options.activeOptions?.exact
-    ? current === href
-    : current.split('?')[0] === href.split('?')[0]
+  const external = typeof options.to === 'string' && getUrlScheme(options.to)
+  const next = external ? undefined : router.buildLocation(options as never)
+  const current = useRouterState({ select: (state) => state.location })
+  const activeOptions = options.activeOptions
+  const currentPath = removeTrailingSlash(current.pathname, router.basepath)
+  const nextPath = next
+    ? removeTrailingSlash(next.pathname, router.basepath)
+    : ''
+  const pathMatches =
+    !!next &&
+    (activeOptions?.exact
+      ? currentPath === nextPath
+      : currentPath.startsWith(nextPath) &&
+        (currentPath.length === nextPath.length ||
+          currentPath[nextPath.length] === '/'))
+  const isActive =
+    pathMatches &&
+    (!(activeOptions?.includeSearch ?? true) ||
+      deepEqual(
+        current.search,
+        next.search,
+        !activeOptions?.exact,
+        activeOptions?.explicitUndefined,
+      )) &&
+    (!activeOptions?.includeHash || current.hash === next.hash)
+  const hostProps = Object.fromEntries(
+    Object.entries(options).filter(([key]) => !routingProps.has(key)),
+  ) as PressableProps
+  const selectedProps = isActive ? options.activeProps : options.inactiveProps
+  const baseStyle = hostProps.style
+  const selectedStyle = selectedProps?.style
+  const style: PressableProps['style'] = selectedStyle
+    ? typeof baseStyle === 'function' || typeof selectedStyle === 'function'
+      ? (state) => [
+          typeof baseStyle === 'function' ? baseStyle(state) : baseStyle,
+          typeof selectedStyle === 'function'
+            ? selectedStyle(state)
+            : selectedStyle,
+        ]
+      : [baseStyle, selectedStyle]
+    : baseStyle
+  const preload = () => {
+    if (
+      !external &&
+      !options.disabled &&
+      (options.preload ?? router.options.defaultPreload)
+    ) {
+      void router.preloadRoute(options as never).catch((error) => {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(error)
+        }
+      })
+    }
+  }
   return {
-    accessibilityRole: 'link' as const,
+    ...hostProps,
+    ...selectedProps,
+    style,
+    accessibilityRole: 'link',
+    accessibilityState: {
+      ...hostProps.accessibilityState,
+      ...selectedProps?.accessibilityState,
+      disabled: !!options.disabled,
+      selected: isActive,
+    },
     disabled: options.disabled,
-    ...(isActive ? options.activeProps : options.inactiveProps),
-    onPress: (event: Parameters<NonNullable<PressableProps['onPress']>>[0]) => {
-      options.onPress?.(event)
+    onPress: (event) => {
+      hostProps.onPress?.(event)
+      if (selectedProps?.onPress !== hostProps.onPress) {
+        selectedProps?.onPress?.(event)
+      }
       if (!options.disabled && !event.isDefaultPrevented()) {
         void navigate(options as never)
       }
     },
-    onPressIn: (
-      event: Parameters<NonNullable<PressableProps['onPressIn']>>[0],
-    ) => {
-      options.onPressIn?.(event)
-      if (options.preload && !options.disabled) {
-        void router.preloadRoute(options as never)
-      }
+    onPressIn: (event) => {
+      hostProps.onPressIn?.(event)
+      preload()
+    },
+    onHoverIn: (event) => {
+      hostProps.onHoverIn?.(event)
+      preload()
     },
     isActive,
   }

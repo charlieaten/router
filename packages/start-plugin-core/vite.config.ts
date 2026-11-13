@@ -44,6 +44,7 @@ export default mergeConfig(
     tsconfigPath: './tsconfig.build.json',
     entry: [
       './src/index.ts',
+      './src/metro.ts',
       './src/utils.ts',
       './src/vite/index.ts',
       './src/rsbuild/index.ts',

@@ -224,6 +224,7 @@ export function tanStackStartVite(
     startCompilerPlugin({
       framework: corePluginOpts.framework,
       environments,
+      nativeEntries: normalizedStartPluginOpts.serverFns?.nativeEntries,
       generateFunctionId:
         normalizedStartPluginOpts.serverFns?.generateFunctionId,
       compilerTransforms: corePluginOpts.compilerTransforms,

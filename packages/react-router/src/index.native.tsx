@@ -336,8 +336,24 @@ export type {
   LocationRewriteFunction,
 } from '@tanstack/router-core'
 
-export { useNavigation, useIsFocused } from './native/context'
+export {
+  useNavigation,
+  useIsFocused,
+  useFocusEffect,
+  useNavigationEvent,
+} from './native/context'
 export type {
   NativeNavigationOptions,
+  NativeNavigationContainer,
   NativeScreenOptions,
+  NativeContainerRenderProps,
+  NativeNavigationEvent,
+  NativeNavigationEventType,
 } from './native/controller'
+
+export type {
+  NativeNavigationPersistenceOptions,
+  NativeNavigationStorage,
+} from './native/persistence'
+
+export type { ScopedNativeNavigation } from './native/context'

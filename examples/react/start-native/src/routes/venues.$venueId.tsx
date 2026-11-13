@@ -8,8 +8,11 @@ export const Route = createFileRoute('/venues/$venueId')({
   validateSearch: z.object({
     section: z.enum(['menu', 'reviews']).default('menu'),
   }),
-  loader: ({ params, context }) =>
-    getVenue({ data: { id: params.venueId, apiOrigin: context.apiOrigin } }),
+  loader: ({ params, context, abortController }) =>
+    getVenue({
+      data: { id: params.venueId, apiOrigin: context.apiOrigin },
+      signal: abortController.signal,
+    }),
   component: Detail,
 })
 

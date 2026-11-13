@@ -93,3 +93,17 @@ test('production discovery includes both iOS and Android JavaScript implementati
     'iosFn_createServerFn_handler',
   ])
 })
+
+test('Metro forwards cache context to the existing Babel transformer', () => {
+  const getCacheKey = vi.fn(
+    (options?: { revision: string }) => options?.revision ?? 'missing',
+  )
+  const metro = createMetroTransformer({
+    root,
+    upstream: { transform: (input) => input, getCacheKey },
+  })
+  const before = metro.getCacheKey({ revision: 'before' })
+  const after = metro.getCacheKey({ revision: 'after' })
+  expect(before).not.toBe(after)
+  expect(getCacheKey).toHaveBeenLastCalledWith({ revision: 'after' })
+})

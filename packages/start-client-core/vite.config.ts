@@ -23,6 +23,8 @@ export default defineConfig(({ command }) =>
       srcDir: './src',
       entry: [
         './src/index.tsx',
+        './src/native.ts',
+        './src/client-rpc/native.ts',
         './src/client/index.ts',
         './src/client-rpc/index.ts',
         './src/hydration/constants.ts',

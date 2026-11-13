@@ -33,6 +33,10 @@
   "types": "dist/esm/index.d.ts",
   "exports": {
     ".": {
+      "react-native": {
+        "types": "./dist/esm/native.d.ts",
+        "default": "./dist/esm/native.js"
+      },
       "react-server": {
         "types": "./dist/esm/index.d.ts",
         "default": "./dist/esm/index.js"
@@ -55,6 +59,10 @@
       }
     },
     "./client-rpc": {
+      "react-native": {
+        "types": "./dist/esm/client-rpc.native.d.ts",
+        "default": "./dist/esm/client-rpc.native.js"
+      },
       "import": {
         "types": "./dist/esm/client-rpc.d.ts",
         "default": "./dist/esm/client-rpc.js"
@@ -146,7 +154,13 @@
         "default": "./dist/esm/client-only.js"
       }
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./plugin/metro": {
+      "import": {
+        "types": "./dist/esm/plugin/metro.d.ts",
+        "default": "./dist/esm/plugin/metro.js"
+      }
+    }
   },
   "sideEffects": false,
   "files": [
