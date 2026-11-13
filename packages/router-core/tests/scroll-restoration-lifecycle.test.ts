@@ -50,6 +50,29 @@ function createRouter(
   })
 }
 
+test('memory navigation works in native hosts without a document', async () => {
+  vi.stubGlobal('document', undefined)
+  try {
+    const router = createRouter({
+      routeTree: new BaseRootRoute({}),
+      isServer: false,
+    })
+    await router.load()
+    expect(() =>
+      router.emit({
+        type: 'onRendered',
+        fromLocation: router.state.location,
+        toLocation: router.state.location,
+        pathChanged: false,
+        hrefChanged: false,
+        hashChanged: false,
+      }),
+    ).not.toThrow()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
 test.each([false, true])(
   'hands off native restoration before taking a pagehide snapshot (persisted=%s)',
   (persisted) => {
