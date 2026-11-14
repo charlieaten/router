@@ -1,3 +1,4 @@
+import { createStandardNavigator } from 'standard-navigation'
 import { expectTypeOf } from 'vitest'
 import {
   Link,
@@ -5,6 +6,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  integrateStandardNavigator,
   linkOptions,
 } from '@tanstack/react-router'
 import type { NativeNavigatorOptions } from '@tanstack/react-router'
@@ -80,4 +82,27 @@ const nestedRoute = createRoute({
       },
     },
   },
+})
+
+// Standard navigator props and events retain their own contract types.
+const standardNavigator = createStandardNavigator<
+  { title: string },
+  {
+    tabPress: { data: { isAlreadyFocused: boolean }; canPreventDefault: true }
+  },
+  { accent: string }
+>(() => null)
+integrateStandardNavigator(standardNavigator, {
+  props: { accent: 'green' },
+  screenOptions: ({ item }) => ({ title: item.title }),
+  listeners: {
+    tabPress(event) {
+      expectTypeOf(event.data.isAlreadyFocused).toEqualTypeOf<boolean>()
+      event.preventDefault()
+    },
+  },
+})
+// @ts-expect-error -- required navigator props must be supplied
+integrateStandardNavigator(standardNavigator, {
+  screenOptions: () => ({ title: 'Tabs' }),
 })

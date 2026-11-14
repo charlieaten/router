@@ -868,12 +868,14 @@ it('reports Back availability for the owning visit rather than a deeper child na
   const parent = createRoute({
     getParentRoute: () => root,
     path: '/parent',
-    component: () => (
-      <div>
-        <p>Parent back {String(useCanGoBack())}</p>
-        <Outlet />
-      </div>
-    ),
+    component: function BackParent() {
+      return (
+        <div>
+          <p>Parent back {String(useCanGoBack())}</p>
+          <Outlet />
+        </div>
+      )
+    },
     staticData: {
       native: {
         navigator: {
@@ -886,7 +888,9 @@ it('reports Back availability for the owning visit rather than a deeper child na
   const child = createRoute({
     getParentRoute: () => parent,
     path: '/$page',
-    component: () => <p>Child back {String(useCanGoBack())}</p>,
+    component: function BackChild() {
+      return <p>Child back {String(useCanGoBack())}</p>
+    },
   })
   const router = createRouter({
     routeTree: root.addChildren([parent.addChildren([child])]),
@@ -902,5 +906,232 @@ it('reports Back availability for the owning visit rather than a deeper child na
   await act(() => nested.navigate({ href: '/parent/2' }))
   await screen.findAllByText('Child back true')
   await screen.findByText('Parent back false')
+  router.history.destroy()
+})
+
+it('hosts a standard navigator with cancellable events and visit-owned child stacks', async () => {
+  const { createStandardNavigator } = await import('standard-navigation')
+  const { integrateStandardNavigator } =
+    await import('../dist/native/esm/index.native.js')
+  const events: Array<string> = []
+  let lastEmitter: {
+    emit: (input: {
+      type: 'tabPress'
+      target: string
+      canPreventDefault: true
+      data: { isAlreadyFocused: boolean }
+    }) => unknown
+  }
+  const standard = createStandardNavigator<
+    { title?: string },
+    {
+      tabPress: { data: { isAlreadyFocused: boolean }; canPreventDefault: true }
+    }
+  >(({ state, descriptors, actions, emitter }) => {
+    lastEmitter = emitter
+    return (
+      <div>
+        <p>Standard selected {state.routes[state.index]?.name}</p>
+        {state.routes.map((route, index) => (
+          <button
+            key={route.key}
+            onClick={() => {
+              const event = emitter.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+                data: { isAlreadyFocused: state.index === index },
+              })
+              if (!event.defaultPrevented) {
+                actions.navigate(route.name, route.params)
+              }
+            }}
+          >
+            Select {descriptors[route.key]!.options.title}
+          </button>
+        ))}
+        {state.routes.map((route) => (
+          <React.Fragment key={route.key}>
+            {descriptors[route.key]!.render()}
+          </React.Fragment>
+        ))}
+        <button onClick={() => actions.back()}>Standard back</button>
+      </div>
+    )
+  })
+  const renderer = integrateStandardNavigator(standard, {
+    screenOptions: ({ route }) => ({ title: route.name }),
+    listeners: {
+      tabPress: (event) => {
+        events.push(event.target!)
+        if (event.target === 'post') {
+          event.preventDefault()
+        }
+      },
+    },
+  })
+  const root = createRootRoute({ component: Outlet })
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <p>Home standard</p>,
+  })
+  const parent = createRoute({
+    getParentRoute: () => root,
+    path: '/standard',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          initialContainer: 'feed',
+          renderContainer: renderer,
+          containers: {
+            feed: { initialHref: '/standard/feed/1' },
+            saved: { initialHref: '/standard/saved/1' },
+            post: { initialHref: '/standard/post/1' },
+          },
+        },
+      },
+    },
+  })
+  const child = createRoute({
+    getParentRoute: () => parent,
+    path: '/$section/$page',
+    component: function StandardDraft() {
+      const { section, page } = child.useParams()
+      const [draft, setDraft] = React.useState('')
+      return (
+        <div>
+          <p>
+            {section} page {page}
+          </p>
+          <input
+            aria-label="Standard draft"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        </div>
+      )
+    },
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home, parent.addChildren([child])]),
+  })
+  const nav = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Home standard')
+  await act(() => router.navigate({ to: '/standard' }))
+  await screen.findByText('Standard selected feed')
+  fireEvent.click(screen.getByText('Select post'))
+  expect(events).toEqual(['post'])
+  expect(screen.getByText('Standard selected feed')).toBeTruthy()
+  fireEvent.click(screen.getByText('Select saved'))
+  await screen.findByText('Standard selected saved')
+  const a = nav.getSnapshot().stacks.main!.at(-1)!
+  await act(() => a.navigator!.navigate({ href: '/standard/saved/2' }))
+  fireEvent.click(screen.getByText('Select saved'))
+  expect(a.navigator!.getActiveEntry()?.href).toBe('/standard/saved/2')
+  fireEvent.change(screen.getAllByLabelText('Standard draft').at(-1)!, {
+    target: { value: 'A draft' },
+  })
+  await act(() => router.navigate({ to: '/standard', target: 'main' }))
+  const b = nav.getSnapshot().stacks.main!.at(-1)!
+  expect(b.navigator!.getSnapshot().selected).toBe('feed')
+  const staleEmitter = lastEmitter!
+  const eventCount = events.length
+  await act(() => nav.back({ target: 'main' }))
+  staleEmitter.emit({
+    type: 'tabPress',
+    target: 'post',
+    canPreventDefault: true,
+    data: { isAlreadyFocused: false },
+  })
+  expect(events).toHaveLength(eventCount)
+  await screen.findByText('Standard selected saved')
+  expect(a.navigator!.getActiveEntry()?.href).toBe('/standard/saved/2')
+  expect(screen.getAllByDisplayValue('A draft').length).toBe(1)
+  fireEvent.click(screen.getByText('Standard back'))
+  await waitFor(() =>
+    expect(a.navigator!.getActiveEntry()?.href).toBe('/standard/saved/1'),
+  )
+  router.history.destroy()
+})
+
+it('projects standard stack visit keys and routes params/search through scoped transactions and blockers', async () => {
+  const { createStandardNavigator } = await import('standard-navigation')
+  const { integrateStandardNavigator } =
+    await import('../dist/native/esm/index.native.js')
+  const renderedKeys: Array<Array<string>> = []
+  const standard = createStandardNavigator<
+    { title: string; blocked?: boolean },
+    {}
+  >(({ state, descriptors, actions }) => {
+    renderedKeys.push(state.routes.map((route) => route.key))
+    return (
+      <div>
+        <button
+          onClick={() =>
+            actions.navigate('/item/$id', { id: 'b', filter: 'new' })
+          }
+        >
+          Standard push
+        </button>
+        <button onClick={() => actions.back()}>Stack back</button>
+        {state.routes.map((route) => (
+          <div key={route.key}>{descriptors[route.key]!.render()}</div>
+        ))}
+      </div>
+    )
+  })
+  let dirty = true
+  const root = createRootRoute({ component: Outlet })
+  const item = createRoute({
+    getParentRoute: () => root,
+    path: '/item/$id',
+    validateSearch: (search: Record<string, unknown>) => ({
+      filter: typeof search.filter === 'string' ? search.filter : 'initial',
+    }),
+    component: function Item() {
+      const { id } = item.useParams()
+      const { filter } = item.useSearch()
+      useBlocker({ shouldBlockFn: () => dirty })
+      return (
+        <p>
+          Item {id} {filter}
+        </p>
+      )
+    },
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([item]),
+    native: {
+      initialContainer: 'main',
+      rootKind: 'stack',
+      renderStack: integrateStandardNavigator(standard, {
+        screenOptions: ({ item }) => ({
+          title: item.title,
+          blocked: item.preventDismiss,
+        }),
+      }),
+      containers: { main: { initialHref: '/item/a' } },
+    },
+  })
+  const nav = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Item a initial')
+  fireEvent.click(screen.getByText('Standard push'))
+  await screen.findByText('Item b new')
+  await act(() => nav.navigate({ href: '/item/b?filter=new' }))
+  const stack = nav.getSnapshot().stacks.main!
+  expect(new Set(stack.map((entry) => entry.key)).size).toBe(3)
+  expect(renderedKeys.at(-1)).toEqual(stack.map((entry) => entry.key))
+  fireEvent.click(screen.getByText('Stack back'))
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(nav.getSnapshot().stacks.main).toHaveLength(3)
+  dirty = false
+  fireEvent.click(screen.getByText('Stack back'))
+  await waitFor(() => expect(nav.getSnapshot().stacks.main).toHaveLength(2))
   router.history.destroy()
 })

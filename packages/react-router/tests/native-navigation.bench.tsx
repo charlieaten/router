@@ -97,3 +97,60 @@ for (const count of [100, 1000, 10000]) {
     navigation.dispose()
   })
 }
+
+for (const count of [6, 50, 500]) {
+  test(`standard descriptor projection with ${count} routes`, async ({
+    bench,
+  }) => {
+    const { createStandardNavigationArgs } =
+      await import('../src/native/standard-navigation')
+    const root = createRootRoute()
+    const home = createRoute({ getParentRoute: () => root, path: '/' })
+    const router = createRouter({ routeTree: root.addChildren([home]) })
+    const navigation = getNativeNavigation(router)
+    await navigation.initialize()
+    const context = {
+      id: '$root',
+      kind: 'tabs' as const,
+      selected: 'tab-0',
+      navigation,
+      routes: Array.from({ length: count }, (_, index) => ({
+        key: `tab-${index}`,
+        name: `tab-${index}`,
+        href: '/',
+      })),
+      children: Array.from({ length: count }, (_, index) => ({
+        key: `tab-${index}`,
+        title: `Tab ${index}`,
+        content: null,
+      })),
+      onNavigate: () => {},
+      onSelect: () => {},
+      onBack: () => {},
+      open: false,
+      onOpenChange: () => {},
+    }
+    const options = {
+      screenOptions: ({ item }: { item: { title: string } }) => ({
+        title: item.title,
+      }),
+    }
+    const run = () => createStandardNavigationArgs(context, options)
+    expect(Object.keys(run().descriptors)).toHaveLength(count)
+    expect(run().state.index).toBe(0)
+    const result = await bench('standard descriptor projection', run).run({
+      time: 1000,
+      warmupIterations: 20,
+    })
+    console.log(
+      JSON.stringify({
+        count,
+        meanMs: result.latency.mean,
+        p99Ms: result.latency.p99,
+        rme: result.latency.rme,
+        samples: result.latency.samplesCount,
+      }),
+    )
+    router.history.destroy()
+  })
+}
