@@ -11086,6 +11086,9 @@ importers:
       react-dom:
         specifier: ~19.2.9
         version: 19.2.9(react@19.2.9)
+      standard-navigation:
+        specifier: 0.0.9
+        version: 0.0.9(react@19.2.9)
       zod:
         specifier: ^4.5.4
         version: 4.6.6
@@ -11132,18 +11135,30 @@ importers:
       expo-dev-client:
         specifier: 58.0.19
         version: 58.0.19(expo@58.0.24(@babel/core@7.29.7(supports-color@10.2.2))(@typescript/typescript6@6.0.2)(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)(supports-color@10.2.2))(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))
+      lottie-react-native:
+        specifier: ~7.5.0
+        version: 7.5.0(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
       react:
         specifier: 19.3.0
         version: 19.3.0
       react-native:
         specifier: 0.88.1
         version: 0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2)
+      react-native-pager-view:
+        specifier: 9.0.7
+        version: 9.0.7(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
       react-native-safe-area-context:
         specifier: ~5.11.1
         version: 5.11.1(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
       react-native-screens:
         specifier: 5.0.0-beta.1
         version: 5.0.0-beta.1(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
+      react-native-tab-view:
+        specifier: ^4.3.4
+        version: 4.3.4(react-native-pager-view@9.0.7(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
+      standard-navigation:
+        specifier: 0.0.9
+        version: 0.0.9(react@19.3.0)
       zod:
         specifier: ^4.5.4
         version: 4.6.6
@@ -14290,6 +14305,9 @@ importers:
       isbot:
         specifier: 'catalog:'
         version: 5.1.28
+      standard-navigation:
+        specifier: 0.0.9
+        version: 0.0.9(react@19.2.9)
     devDependencies:
       '@arethetypeswrong/cli':
         specifier: 'catalog:'
@@ -15021,7 +15039,7 @@ importers:
         version: 8.3.4(@types/node@25.0.9)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.97.2)(terser@5.51.2)(tsx@4.20.3)(yaml@2.9.0)
       vite-plugin-solid:
         specifier: ^2.11.10 || ^3.0.0-0
-        version: 2.11.11(@testing-library/jest-dom@6.6.3)(solid-js@1.9.12)(supports-color@10.2.2)(vite@8.3.4(@types/node@25.0.9)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.97.2)(terser@5.51.2)(tsx@4.20.3)(yaml@2.9.0))
+        version: 2.11.16(@testing-library/jest-dom@6.6.3)(solid-js@1.9.12)(supports-color@10.2.2)(vite@8.3.4(@types/node@25.0.9)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.97.2)(terser@5.51.2)(tsx@4.20.3)(yaml@2.9.0))
       zod:
         specifier: 'catalog:'
         version: 4.5.4
@@ -27287,6 +27305,19 @@ packages:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
     hasBin: true
 
+  lottie-react-native@7.5.0:
+    resolution: {integrity: sha512-pT9JdskrRpsdBWGUTdPIQfdY+AoJHvp9F392kfNW4ucjoTfa7Y46iv0wQ/AXmzVN+4SzXjwtXeQM/nMKNd2+jg==}
+    peerDependencies:
+      '@lottiefiles/dotlottie-react': ^0.13.5
+      react: ~19.2.9
+      react-native: '>=0.84'
+      react-native-windows: '>=0.63.x'
+    peerDependenciesMeta:
+      '@lottiefiles/dotlottie-react':
+        optional: true
+      react-native-windows:
+        optional: true
+
   lower-case@2.0.2:
     resolution: {integrity: sha512-7fm3l3NAF9WfN6W3JOmf5drwpVqX78JtoGJ3A6W0a6ZnldM41w2fV5D490psKFTpMds8TJse/eHLFFsNHHjHgg==}
 
@@ -28679,6 +28710,12 @@ packages:
   react-is@19.0.0:
     resolution: {integrity: sha512-H91OHcwjZsbq3ClIDHMzBShc1rotbfACdWENsmEf0IFvZ3FgGPtdHMcsv45bQ1hAbgdfiA8SnxTKfDS+x/8m2g==}
 
+  react-native-pager-view@9.0.7:
+    resolution: {integrity: sha512-71kLSrjZy8onJTXkoAWF/0UtInkF+xqmqudiV/axZe8PVGG+CK6jVdh8NYFJLKetQ6UQ9ScPNliagpvLBp1xkQ==}
+    peerDependencies:
+      react: ~19.2.9
+      react-native: '*'
+
   react-native-safe-area-context@5.11.1:
     resolution: {integrity: sha512-yCltXXwhwp42vMqfhAsH5BWgAysbLNgwfn3PDwNpOn/CgwfM+eMWgScZIbHbMzJYNLi5bKJEOIUEG4RwKNiECA==}
     peerDependencies:
@@ -28690,6 +28727,13 @@ packages:
     peerDependencies:
       react: ~19.2.9
       react-native: '*'
+
+  react-native-tab-view@4.3.4:
+    resolution: {integrity: sha512-z8eXgVmfLx2aSMeppQkuZPbb2N00H76T7OwtGcZYua5g2h9AYBbkYrYN4rKY0wSl1g0YRQ+NS6LLVkxppGr68g==}
+    peerDependencies:
+      react: ~19.2.9
+      react-native: '*'
+      react-native-pager-view: '>= 6.0.0'
 
   react-native@0.88.1:
     resolution: {integrity: sha512-wajWcLZ93GCN7k4Uwh4CS4L2Ah8ohcvkOXnvIYmh4Yvuqho5j3APZ9qozK+nQrHWSgauq4h8D3HN5DKK84SrHA==}
@@ -29570,6 +29614,11 @@ packages:
   standard-as-callback@2.1.0:
     resolution: {integrity: sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A==}
 
+  standard-navigation@0.0.9:
+    resolution: {integrity: sha512-wPyhORF3kazxGp2lOOBrx5fFPzUNp3psBrKzkSrJRhs8/bk6gjjVrHq5mjz+4FBA9CfFl2zoxiirgEhqv4NOsw==}
+    peerDependencies:
+      react: ~19.2.9
+
   standardwebhooks@1.0.0:
     resolution: {integrity: sha512-BbHGOQK9olHPMvQNHWul6MYlrRTAOKn03rOe4A8O3CLWhNf4YHBqq2HJKKC+sfqpxiBY52pNeesD6jIiLDz8jg==}
 
@@ -30382,6 +30431,11 @@ packages:
       '@types/react':
         optional: true
 
+  use-latest-callback@0.2.6:
+    resolution: {integrity: sha512-FvRG9i1HSo0wagmX63Vrm8SnlUU3LMM3WyZkQ76RnslpBrX694AdG4A0zQBx2B3ZifFA0yv/BaEHGBnEax5rZg==}
+    peerDependencies:
+      react: ~19.2.9
+
   use-sidecar@1.1.3:
     resolution: {integrity: sha512-Fedw0aZvkhynoPYlA5WXrMCAMm+nSWdZt6lzJQ7Ok8S6Q+VsHmHpRWndVRJ8Be0ZbkfPc5LRYH+5XrzXcEeLRQ==}
     engines: {node: '>=10'}
@@ -30479,6 +30533,16 @@ packages:
     resolution: {integrity: sha512-YMZCXsLw9kyuvQFEdwLP27fuTQJLmjNoHy90AOJnbRuJ6DwShUxKFo38gdFrWn9v11hnGicKCZEaeI/TFs6JKw==}
     peerDependencies:
       '@testing-library/jest-dom': ^5.16.6 || ^5.17.0 || ^6.*
+      solid-js: 1.9.12
+      vite: ^8.3.4
+    peerDependenciesMeta:
+      '@testing-library/jest-dom':
+        optional: true
+
+  vite-plugin-solid@2.11.16:
+    resolution: {integrity: sha512-qguFUmqY2ICuoGHrZjm+cWpvKkqVyWDMptipC/BIEGr9q6wEzwTWYOjM9pEWJ+yoTuF6T5OpysI2Okdy7rsVlQ==}
+    peerDependencies:
+      '@testing-library/jest-dom': ^5.16.6 || ^5.17.0 || ^6.0.0 || ^7.0.0
       solid-js: 1.9.12
       vite: ^8.3.4
     peerDependenciesMeta:
@@ -43693,6 +43757,11 @@ snapshots:
     dependencies:
       js-tokens: 4.0.0
 
+  lottie-react-native@7.5.0(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0):
+    dependencies:
+      react: 19.3.0
+      react-native: 0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2)
+
   lower-case@2.0.2:
     dependencies:
       tslib: 2.8.1
@@ -45507,6 +45576,11 @@ snapshots:
 
   react-is@19.0.0: {}
 
+  react-native-pager-view@9.0.7(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0):
+    dependencies:
+      react: 19.3.0
+      react-native: 0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2)
+
   react-native-safe-area-context@5.11.1(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0):
     dependencies:
       react: 19.3.0
@@ -45525,6 +45599,13 @@ snapshots:
       react-freeze: 1.0.4(react@19.3.0)
       react-native: 0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2)
       warn-once: 0.1.1
+
+  react-native-tab-view@4.3.4(react-native-pager-view@9.0.7(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0):
+    dependencies:
+      react: 19.3.0
+      react-native: 0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2)
+      react-native-pager-view: 9.0.7(react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
+      use-latest-callback: 0.2.6(react@19.3.0)
 
   react-native@0.88.1(@babel/core@7.29.7(supports-color@10.2.2))(@types/react@19.2.9)(react@19.2.9)(supports-color@10.2.2):
     dependencies:
@@ -46611,6 +46692,14 @@ snapshots:
   standard-as-callback@2.1.0:
     optional: true
 
+  standard-navigation@0.0.9(react@19.2.9):
+    dependencies:
+      react: 19.2.9
+
+  standard-navigation@0.0.9(react@19.3.0):
+    dependencies:
+      react: 19.3.0
+
   standardwebhooks@1.0.0:
     dependencies:
       '@stablelib/base64': 1.0.1
@@ -47323,6 +47412,10 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.9
 
+  use-latest-callback@0.2.6(react@19.3.0):
+    dependencies:
+      react: 19.3.0
+
   use-sidecar@1.1.3(@types/react@19.2.9)(react@19.2.9):
     dependencies:
       detect-node-es: 1.1.0
@@ -47526,6 +47619,21 @@ snapshots:
       vitefu: 1.1.1(vite@8.3.4(@types/node@25.0.9)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.97.2)(terser@5.51.2)(tsx@4.20.3)(yaml@2.9.0))
     optionalDependencies:
       '@testing-library/jest-dom': 7.0.1(@testing-library/dom@10.4.1)(vitest@5.0.4)
+    transitivePeerDependencies:
+      - supports-color
+
+  vite-plugin-solid@2.11.16(@testing-library/jest-dom@6.6.3)(solid-js@1.9.12)(supports-color@10.2.2)(vite@8.3.4(@types/node@25.0.9)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.97.2)(terser@5.51.2)(tsx@4.20.3)(yaml@2.9.0)):
+    dependencies:
+      '@babel/core': 7.29.7(supports-color@10.2.2)
+      '@types/babel__core': 7.20.5
+      babel-preset-solid: 1.9.10(@babel/core@7.29.7(supports-color@10.2.2))(solid-js@1.9.12)
+      merge-anything: 5.1.7
+      solid-js: 1.9.12
+      solid-refresh: 0.6.3(solid-js@1.9.12)(supports-color@10.2.2)
+      vite: 8.3.4(@types/node@25.0.9)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.97.2)(terser@5.51.2)(tsx@4.20.3)(yaml@2.9.0)
+      vitefu: 1.1.3(vite@8.3.4(@types/node@25.0.9)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.105.1)(sass@1.97.2)(terser@5.51.2)(tsx@4.20.3)(yaml@2.9.0))
+    optionalDependencies:
+      '@testing-library/jest-dom': 6.6.3
     transitivePeerDependencies:
       - supports-color
 
