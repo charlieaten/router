@@ -36,6 +36,7 @@ export interface NativeNavigationOptions {
   rootKind?: NavigationDefinition['rootKind']
   backBehavior?: NavigationDefinition['backBehavior']
   renderContainer?: React.ComponentType<NativeContainerRenderProps>
+  renderStack?: React.ComponentType<NativeContainerRenderProps>
   linking?: { prefixes: Array<string> }
   initialContainer: string
   containers: Record<string, NativeNavigationContainer>
@@ -61,6 +62,7 @@ export type NativeNavigatorOptions = {
   | 'rootKind'
   | 'backBehavior'
   | 'renderContainer'
+  | 'renderStack'
 >
 export interface NativeScreenOptions {
   /** Instantiate this navigator separately for every visit to this route. */
@@ -167,6 +169,8 @@ export function getEntryNavigatorOptions(
     const accepted = {
       ...resolved,
       rootKind: resolved.rootKind,
+      renderContainer: resolved.renderContainer,
+      renderStack: resolved.renderStack,
       backBehavior: resolved.backBehavior,
     }
     navigatorDefinitions.set(entry.value, accepted)
@@ -181,6 +185,7 @@ export function attachNativeNavigation(router: AnyRouter) {
     containers: { main: { initialHref: '/' } },
   }
   router.update({ ...router.options, native: config })
+  const preloadRoot = router.preloadRoute.bind(router)
   const dataCache = createRouterDataCache(config.dataCache)
   const presented = new WeakSet<AnyRouter>()
   const navigation = createNavigation<AnyRouter>({
@@ -259,6 +264,15 @@ export function attachNativeNavigation(router: AnyRouter) {
         })
         const preload = scoped.preloadRoute
         scoped.preloadRoute = (async (options) => {
+          const destination = scoped.buildLocation(options as never)
+          if (scoped._execution && !scoped._execution.accepts(destination)) {
+            // Preloading outside this visit must not borrow its bounded prefix.
+            const result = await preloadRoot({
+              href: destination.href,
+            } as never)
+            dataCache.publish(router)
+            return result
+          }
           const result = await preload(options)
           if (presented.has(scoped)) {
             dataCache.publish(scoped)
@@ -685,8 +699,18 @@ export interface NativeContainerRenderProps {
     title: string
     content: React.ReactNode
     preventDismiss?: boolean
+    options?: NativeScreenOptions
     tab?: NativeNavigationContainer['tab']
   }>
+  navigation: NativeNavigation
+  routes: Array<{
+    key: string
+    name: string
+    href: string | undefined
+    params?: object
+  }>
+  onNavigate: (name: string, params?: object) => void
+  onBack: () => void
   onSelect: (key: string) => void
   open: boolean
   onOpenChange: (open: boolean) => void

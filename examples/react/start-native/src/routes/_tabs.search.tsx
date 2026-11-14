@@ -2,18 +2,18 @@ import { createFileRoute } from '@tanstack/react-router'
 import { listVenues } from '../data'
 import { VenueList } from '../ui/venue-list'
 
-export const Route = createFileRoute('/')({
-  staticData: { native: { title: 'Discover' } },
+export const Route = createFileRoute('/_tabs/search')({
+  staticData: { native: { title: 'Search' } },
   loader: ({ abortController }) =>
     listVenues({ signal: abortController.signal }),
-  component: Home,
+  component: Search,
 })
 
-function Home() {
+function Search() {
   return (
     <VenueList
       venues={Route.useLoaderData()}
-      title="Somewhere worth staying."
+      title="Find your next favorite."
     />
   )
 }

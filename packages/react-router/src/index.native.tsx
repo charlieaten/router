@@ -358,3 +358,6 @@ export type {
 } from './native/persistence'
 
 export type { ScopedNativeNavigation } from './native/context'
+
+export { integrateStandardNavigator } from './native/standard-navigation'
+export type { StandardNavigationOptions } from './native/standard-navigation'

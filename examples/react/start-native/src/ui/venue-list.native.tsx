@@ -40,6 +40,15 @@ export function VenueList({
           Try independent nested stacks ↗
         </Text>
       </Link>
+      <Link
+        to="/navigation-lab"
+        testID="open-standard-lab"
+        style={{ padding: 18, backgroundColor: '#e7eee7', borderRadius: 14 }}
+      >
+        <Text style={{ color: '#203d32', fontWeight: '600' }}>
+          Try Tastebuds-style standard navigators ↗
+        </Text>
+      </Link>
       {venues.map((venue) => (
         <Link
           key={venue.id}

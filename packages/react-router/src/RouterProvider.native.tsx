@@ -320,6 +320,35 @@ function DrawerHost(props: NativeContainerRenderProps) {
   )
 }
 
+// Standard navigator params are flat; TanStack keeps path params and search separate.
+function standardParams(router: AnyRouter, name: string, values?: object) {
+  if (!values) {
+    return {}
+  }
+  const normalized = name.replace(/\/$/, '') || '/'
+  if (!router.routesByPath[normalized] && !router.routesByPath[name]) {
+    throw new Error(`Unknown TanStack route: ${name}`)
+  }
+  const names = new Set(
+    name
+      .split('/')
+      .flatMap((part) =>
+        Array.from(part.matchAll(/\$([A-Za-z0-9_]+)/g), (match) => match[1]!),
+      ),
+  )
+  if (name.endsWith('/$')) {
+    names.add('_splat')
+  }
+  return {
+    params: Object.fromEntries(
+      Object.entries(values).filter(([key]) => names.has(key)),
+    ),
+    search: Object.fromEntries(
+      Object.entries(values).filter(([key]) => !names.has(key)),
+    ),
+  }
+}
+
 function NativeContainer({
   id,
   router,
@@ -340,6 +369,61 @@ function NativeContainer({
   const definitions = config.containers
   const children = navigation.getChildren(id)
   if (id && !children.length) {
+    const CustomStack = config.renderStack
+    if (CustomStack) {
+      const entries = state.stacks[id]!
+      return (
+        <CustomStack
+          id={id}
+          kind="stack"
+          selected={entries.at(-1)?.key ?? ''}
+          navigation={navigation}
+          routes={entries.map((entry) => {
+            const match = entry.value.state.matches.at(-1)!
+            return {
+              key: entry.key,
+              name: entry.value.routesById[match.routeId]!.fullPath,
+              href: entry.href,
+              params: { ...match.search, ...match.params },
+            }
+          })}
+          children={entries.map((entry, index) => ({
+            key: entry.key,
+            title: getScreenOptions(entry).title ?? entry.href,
+            preventDismiss: navigation.isRemovalBlocked(entry.key),
+            options: getScreenOptions(entry),
+            content: (
+              <Entry
+                entry={entry}
+                active={
+                  !!getScreenOptions(entry).keepActive ||
+                  navigation.isRemovalBlocked(entry.key) ||
+                  (selected && index >= entries.length - 2)
+                }
+              />
+            ),
+          }))}
+          onNavigate={(name, params) => {
+            const scope = entries.at(-1)?.value ?? router
+            void scope
+              .navigate({
+                to: name,
+                ...standardParams(scope, name, params),
+                target: id,
+              } as never)
+              .catch(onError)
+          }}
+          onBack={() => {
+            void navigation.back({ target: id }).catch(onError)
+          }}
+          onSelect={(key) => {
+            void navigation.popTo({ target: id, key }).catch(onError)
+          }}
+          open={false}
+          onOpenChange={() => {}}
+        />
+      )
+    }
     return (
       <NativeStack
         entries={state.stacks[id]!}
@@ -384,8 +468,73 @@ function NativeContainer({
       />
     ),
   }))
+  const Custom = config.renderContainer
+  const routes = Custom
+    ? items.map((item) => {
+        const entry = navigation.getActiveEntry({
+          ...state,
+          selected: item.key,
+          overlays: [],
+        })
+        const match = entry?.value.state.matches.at(-1)
+        return {
+          key: item.key,
+          name: item.key,
+          href: entry?.href ?? definitions[item.key]?.initialHref,
+          params: match ? { ...match.search, ...match.params } : undefined,
+        }
+      })
+    : []
   const props: NativeContainerRenderProps = {
     id: id ?? '$root',
+    navigation,
+    routes,
+    onNavigate: (name, params) => {
+      if (!children.includes(name)) {
+        throw new Error(`Unknown navigator route: ${name}`)
+      }
+      if (params === undefined) {
+        void navigation.select(name).catch(onError)
+        return
+      }
+      const route = routes.find((route) => route.name === name)!
+      const current = route.params ?? {}
+      if (
+        Object.keys(current).length === Object.keys(params).length &&
+        Object.entries(params).every(([key, value]) =>
+          Object.is(value, current[key as keyof typeof current]),
+        )
+      ) {
+        void navigation.select(name).catch(onError)
+        return
+      }
+      const destination = route.href
+      if (!destination) {
+        throw new Error('Navigating with params requires an initialHref')
+      }
+      const match = router
+        .getMatchedRoutes(destination.split(/[?#]/, 1)[0]!)[0]
+        .at(-1)!
+      let leaf = name
+      while (state.selectedChildren[leaf]) {
+        leaf = state.selectedChildren[leaf]!
+      }
+      const entry = state.stacks[leaf]?.at(-1)
+      const scope =
+        entry?.navigator?.getActiveEntry()?.value ?? entry?.value ?? router
+      void scope
+        .navigate({
+          to: match.fullPath,
+          ...standardParams(scope, match.fullPath, params),
+          target: name,
+          entryId: entry?.identity,
+          stackBehavior: 'reuse',
+        } as never)
+        .catch(onError)
+    },
+    onBack: () => {
+      void navigation.back().catch(onError)
+    },
     kind,
     selected: selectedChild,
     children: items,
@@ -397,7 +546,6 @@ function NativeContainer({
       void navigation.setDrawerOpen(id ?? '$root', open).catch(onError)
     },
   }
-  const Custom = config.renderContainer
   if (Custom) {
     return <Custom {...props} />
   }

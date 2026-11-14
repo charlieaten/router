@@ -9,16 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as TabsRouteImport } from './routes/_tabs'
 import { Route as ComposeRouteImport } from './routes/compose'
-import { Route as SearchRouteImport } from './routes/search'
+import { Route as NavigationLabRouteImport } from './routes/navigation-lab'
+import { Route as TabsIndexRouteImport } from './routes/_tabs.index'
+import { Route as TabsSearchRouteImport } from './routes/_tabs.search'
+import { Route as NavigationLabSavedRouteImport } from './routes/navigation-lab.saved'
 import { Route as VenuesVenueIdRouteImport } from './routes/venues.$venueId'
 import { Route as WorkspacesWorkspaceIdRouteImport } from './routes/workspaces.$workspaceId'
+import { Route as NavigationLabTabPageRouteImport } from './routes/navigation-lab.$tab.$page'
+import { Route as NavigationLabSavedSectionPageRouteImport } from './routes/navigation-lab.saved.$section.$page'
 import { Route as WorkspacesWorkspaceIdSectionPageRouteImport } from './routes/workspaces.$workspaceId.$section.$page'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const TabsRoute = TabsRouteImport.update({
+  id: '/_tabs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ComposeRoute = ComposeRouteImport.update({
@@ -26,10 +30,25 @@ const ComposeRoute = ComposeRouteImport.update({
   path: '/compose',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SearchRoute = SearchRouteImport.update({
+const NavigationLabRoute = NavigationLabRouteImport.update({
+  id: '/navigation-lab',
+  path: '/navigation-lab',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TabsIndexRoute = TabsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TabsRoute,
+} as any)
+const TabsSearchRoute = TabsSearchRouteImport.update({
   id: '/search',
   path: '/search',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => TabsRoute,
+} as any)
+const NavigationLabSavedRoute = NavigationLabSavedRouteImport.update({
+  id: '/saved',
+  path: '/saved',
+  getParentRoute: () => NavigationLabRoute,
 } as any)
 const VenuesVenueIdRoute = VenuesVenueIdRouteImport.update({
   id: '/venues/$venueId',
@@ -41,6 +60,17 @@ const WorkspacesWorkspaceIdRoute = WorkspacesWorkspaceIdRouteImport.update({
   path: '/workspaces/$workspaceId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NavigationLabTabPageRoute = NavigationLabTabPageRouteImport.update({
+  id: '/$tab/$page',
+  path: '/$tab/$page',
+  getParentRoute: () => NavigationLabRoute,
+} as any)
+const NavigationLabSavedSectionPageRoute =
+  NavigationLabSavedSectionPageRouteImport.update({
+    id: '/$section/$page',
+    path: '/$section/$page',
+    getParentRoute: () => NavigationLabSavedRoute,
+  } as any)
 const WorkspacesWorkspaceIdSectionPageRoute =
   WorkspacesWorkspaceIdSectionPageRouteImport.update({
     id: '/$section/$page',
@@ -49,28 +79,41 @@ const WorkspacesWorkspaceIdSectionPageRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof TabsIndexRoute
   '/compose': typeof ComposeRoute
-  '/search': typeof SearchRoute
+  '/navigation-lab': typeof NavigationLabRouteWithChildren
+  '/search': typeof TabsSearchRoute
+  '/navigation-lab/saved': typeof NavigationLabSavedRouteWithChildren
   '/venues/$venueId': typeof VenuesVenueIdRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
+  '/navigation-lab/$tab/$page': typeof NavigationLabTabPageRoute
+  '/navigation-lab/saved/$section/$page': typeof NavigationLabSavedSectionPageRoute
   '/workspaces/$workspaceId/$section/$page': typeof WorkspacesWorkspaceIdSectionPageRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/compose': typeof ComposeRoute
-  '/search': typeof SearchRoute
+  '/navigation-lab': typeof NavigationLabRouteWithChildren
+  '/search': typeof TabsSearchRoute
+  '/navigation-lab/saved': typeof NavigationLabSavedRouteWithChildren
   '/venues/$venueId': typeof VenuesVenueIdRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
+  '/': typeof TabsIndexRoute
+  '/navigation-lab/$tab/$page': typeof NavigationLabTabPageRoute
+  '/navigation-lab/saved/$section/$page': typeof NavigationLabSavedSectionPageRoute
   '/workspaces/$workspaceId/$section/$page': typeof WorkspacesWorkspaceIdSectionPageRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_tabs': typeof TabsRouteWithChildren
   '/compose': typeof ComposeRoute
-  '/search': typeof SearchRoute
+  '/navigation-lab': typeof NavigationLabRouteWithChildren
+  '/_tabs/search': typeof TabsSearchRoute
+  '/navigation-lab/saved': typeof NavigationLabSavedRouteWithChildren
   '/venues/$venueId': typeof VenuesVenueIdRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
+  '/_tabs/': typeof TabsIndexRoute
+  '/navigation-lab/$tab/$page': typeof NavigationLabTabPageRoute
+  '/navigation-lab/saved/$section/$page': typeof NavigationLabSavedSectionPageRoute
   '/workspaces/$workspaceId/$section/$page': typeof WorkspacesWorkspaceIdSectionPageRoute
 }
 export interface FileRouteTypes {
@@ -78,43 +121,56 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/compose'
+    | '/navigation-lab'
     | '/search'
+    | '/navigation-lab/saved'
     | '/venues/$venueId'
     | '/workspaces/$workspaceId'
+    | '/navigation-lab/$tab/$page'
+    | '/navigation-lab/saved/$section/$page'
     | '/workspaces/$workspaceId/$section/$page'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/compose'
+    | '/navigation-lab'
     | '/search'
+    | '/navigation-lab/saved'
     | '/venues/$venueId'
     | '/workspaces/$workspaceId'
+    | '/'
+    | '/navigation-lab/$tab/$page'
+    | '/navigation-lab/saved/$section/$page'
     | '/workspaces/$workspaceId/$section/$page'
   id:
     | '__root__'
-    | '/'
+    | '/_tabs'
     | '/compose'
-    | '/search'
+    | '/navigation-lab'
+    | '/_tabs/search'
+    | '/navigation-lab/saved'
     | '/venues/$venueId'
     | '/workspaces/$workspaceId'
+    | '/_tabs/'
+    | '/navigation-lab/$tab/$page'
+    | '/navigation-lab/saved/$section/$page'
     | '/workspaces/$workspaceId/$section/$page'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  TabsRoute: typeof TabsRouteWithChildren
   ComposeRoute: typeof ComposeRoute
-  SearchRoute: typeof SearchRoute
+  NavigationLabRoute: typeof NavigationLabRouteWithChildren
   VenuesVenueIdRoute: typeof VenuesVenueIdRoute
   WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
+    '/_tabs': {
+      id: '/_tabs'
+      path: ''
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof TabsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/compose': {
@@ -124,12 +180,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComposeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/search': {
-      id: '/search'
+    '/navigation-lab': {
+      id: '/navigation-lab'
+      path: '/navigation-lab'
+      fullPath: '/navigation-lab'
+      preLoaderRoute: typeof NavigationLabRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_tabs/': {
+      id: '/_tabs/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof TabsIndexRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/_tabs/search': {
+      id: '/_tabs/search'
       path: '/search'
       fullPath: '/search'
-      preLoaderRoute: typeof SearchRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof TabsSearchRouteImport
+      parentRoute: typeof TabsRoute
+    }
+    '/navigation-lab/saved': {
+      id: '/navigation-lab/saved'
+      path: '/saved'
+      fullPath: '/navigation-lab/saved'
+      preLoaderRoute: typeof NavigationLabSavedRouteImport
+      parentRoute: typeof NavigationLabRoute
     }
     '/venues/$venueId': {
       id: '/venues/$venueId'
@@ -145,6 +222,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspacesWorkspaceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/navigation-lab/$tab/$page': {
+      id: '/navigation-lab/$tab/$page'
+      path: '/$tab/$page'
+      fullPath: '/navigation-lab/$tab/$page'
+      preLoaderRoute: typeof NavigationLabTabPageRouteImport
+      parentRoute: typeof NavigationLabRoute
+    }
+    '/navigation-lab/saved/$section/$page': {
+      id: '/navigation-lab/saved/$section/$page'
+      path: '/$section/$page'
+      fullPath: '/navigation-lab/saved/$section/$page'
+      preLoaderRoute: typeof NavigationLabSavedSectionPageRouteImport
+      parentRoute: typeof NavigationLabSavedRoute
+    }
     '/workspaces/$workspaceId/$section/$page': {
       id: '/workspaces/$workspaceId/$section/$page'
       path: '/$section/$page'
@@ -154,6 +245,43 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface TabsRouteChildren {
+  TabsSearchRoute: typeof TabsSearchRoute
+  TabsIndexRoute: typeof TabsIndexRoute
+}
+
+const TabsRouteChildren: TabsRouteChildren = {
+  TabsSearchRoute: TabsSearchRoute,
+  TabsIndexRoute: TabsIndexRoute,
+}
+
+const TabsRouteWithChildren = TabsRoute._addFileChildren(TabsRouteChildren)
+
+interface NavigationLabSavedRouteChildren {
+  NavigationLabSavedSectionPageRoute: typeof NavigationLabSavedSectionPageRoute
+}
+
+const NavigationLabSavedRouteChildren: NavigationLabSavedRouteChildren = {
+  NavigationLabSavedSectionPageRoute: NavigationLabSavedSectionPageRoute,
+}
+
+const NavigationLabSavedRouteWithChildren =
+  NavigationLabSavedRoute._addFileChildren(NavigationLabSavedRouteChildren)
+
+interface NavigationLabRouteChildren {
+  NavigationLabSavedRoute: typeof NavigationLabSavedRouteWithChildren
+  NavigationLabTabPageRoute: typeof NavigationLabTabPageRoute
+}
+
+const NavigationLabRouteChildren: NavigationLabRouteChildren = {
+  NavigationLabSavedRoute: NavigationLabSavedRouteWithChildren,
+  NavigationLabTabPageRoute: NavigationLabTabPageRoute,
+}
+
+const NavigationLabRouteWithChildren = NavigationLabRoute._addFileChildren(
+  NavigationLabRouteChildren,
+)
 
 interface WorkspacesWorkspaceIdRouteChildren {
   WorkspacesWorkspaceIdSectionPageRoute: typeof WorkspacesWorkspaceIdSectionPageRoute
@@ -169,9 +297,9 @@ const WorkspacesWorkspaceIdRouteWithChildren =
   )
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  TabsRoute: TabsRouteWithChildren,
   ComposeRoute: ComposeRoute,
-  SearchRoute: SearchRoute,
+  NavigationLabRoute: NavigationLabRouteWithChildren,
   VenuesVenueIdRoute: VenuesVenueIdRoute,
   WorkspacesWorkspaceIdRoute: WorkspacesWorkspaceIdRouteWithChildren,
 }

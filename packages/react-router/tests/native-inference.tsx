@@ -93,7 +93,7 @@ const standardNavigator = createStandardNavigator<
   { accent: string }
 >(() => null)
 integrateStandardNavigator(standardNavigator, {
-  props: { accent: 'green' },
+  props: (context) => ({ accent: context.kind }),
   screenOptions: ({ item }) => ({ title: item.title }),
   listeners: {
     tabPress(event) {
