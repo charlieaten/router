@@ -1135,3 +1135,38 @@ it('projects standard stack visit keys and routes params/search through scoped t
   await waitFor(() => expect(nav.getSnapshot().stacks.main).toHaveLength(2))
   router.history.destroy()
 })
+
+it('keeps an outgoing sheet renderable until native dismissal completes', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <p>Sheet return home</p>,
+  })
+  const sheet = createRoute({
+    getParentRoute: () => root,
+    path: '/sheet',
+    staticData: { native: { presentation: 'formSheet' } },
+    component: () => <p>Retained outgoing sheet</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home, sheet]),
+    native: {
+      initialContainer: 'main',
+      containers: {
+        main: { initialHref: '/' },
+        sheet: { initialHref: '/sheet', overlay: true },
+      },
+    },
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Sheet return home')
+  await act(() => navigation.navigate({ href: '/sheet', target: 'sheet' }))
+  await screen.findByText('Retained outgoing sheet')
+  await act(() => navigation.back({ target: 'sheet' }))
+  fireEvent.click(await screen.findByText('Finish native sheet dismissal'))
+  await screen.findByText('Sheet return home')
+  expect(navigation.getSnapshot().overlays).toEqual([])
+  router.history.destroy()
+})
