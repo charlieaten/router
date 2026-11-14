@@ -1170,3 +1170,52 @@ it('keeps an outgoing sheet renderable until native dismissal completes', async 
   expect(navigation.getSnapshot().overlays).toEqual([])
   router.history.destroy()
 })
+
+it('preloads a sibling destination from a child of a pathless navigator without crossing its execution boundary', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const tabs = createRoute({
+    getParentRoute: () => root,
+    id: '_tabs',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          initialContainer: 'feed',
+          containers: { feed: { initialHref: '/' } },
+        },
+      },
+    },
+  })
+  const home = createRoute({
+    getParentRoute: () => tabs,
+    path: '/',
+    component: () => <p>Pathless home</p>,
+  })
+  const loader = vi.fn(() => 'Preloaded sibling data')
+  const sibling = createRoute({
+    getParentRoute: () => root,
+    path: '/sibling',
+    staleTime: 60000,
+    loader,
+    component: () => <p>{sibling.useLoaderData()}</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([tabs.addChildren([home]), sibling]),
+    native: {
+      rootKind: 'stack',
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/' } },
+    },
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Pathless home')
+  const result = await router.preloadRoute({ to: '/sibling' })
+  expect(result?.at(-1)?.loaderData).toBe('Preloaded sibling data')
+  expect(navigation.getActiveEntry()?.href).toBe('/')
+  expect(navigation.getSnapshot().stacks.main).toHaveLength(1)
+  await act(() => router.navigate({ to: '/sibling' }))
+  await screen.findByText('Preloaded sibling data')
+  expect(loader).toHaveBeenCalledTimes(1)
+  router.history.destroy()
+})
