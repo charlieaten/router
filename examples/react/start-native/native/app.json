@@ -9,6 +9,6 @@
     "android": {
       "package": "dev.tanstack.nativelab"
     },
-    "plugins": ["expo-dev-client"]
+    "plugins": ["expo-dev-client", "expo-font"]
   }
 }

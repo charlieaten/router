@@ -10,7 +10,19 @@
       ],
       "react-native-safe-area-context": [
         "./native/node_modules/react-native-safe-area-context"
-      ]
+      ],
+      "lottie-react-native": ["./native/node_modules/lottie-react-native"],
+      "react-native-tab-view": ["./native/node_modules/react-native-tab-view"],
+      "react-native-pager-view": [
+        "./native/node_modules/react-native-pager-view"
+      ],
+      "react-native-reanimated": [
+        "./native/node_modules/react-native-reanimated"
+      ],
+      "react-native-worklets": ["./native/node_modules/react-native-worklets"],
+      "react-native-svg": ["./native/node_modules/react-native-svg"],
+      "expo-font": ["./native/node_modules/expo-font"],
+      "expo-haptics": ["./native/node_modules/expo-haptics"]
     }
   },
   "include": ["native/App.tsx"],

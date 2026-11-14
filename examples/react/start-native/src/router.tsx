@@ -1,7 +1,6 @@
 import { createRouter } from '@tanstack/react-router'
 import { apiOrigin } from './platform-config'
 import { routeTree } from './routeTree.gen'
-import { tabIcons } from './navigation-icons'
 
 export function getRouter() {
   const options = {
@@ -12,14 +11,10 @@ export function getRouter() {
     defaultPreload: 'intent' as const,
     native: {
       linking: { prefixes: ['tanstack-native-lab://'] },
-      initialContainer: 'feed',
+      rootKind: 'stack' as const,
+      initialContainer: 'main',
       containers: {
-        feed: { initialHref: '/', title: 'Discover', tab: tabIcons.feed },
-        search: {
-          initialHref: '/search',
-          title: 'Search',
-          tab: tabIcons.search,
-        },
+        main: { initialHref: '/' },
         composer: { initialHref: '/compose', overlay: true },
       },
     },

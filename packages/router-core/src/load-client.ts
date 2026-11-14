@@ -2616,9 +2616,14 @@ export function disposeClientExecution(
   router._cache.clear()
   clearTimeout(router._pending?.[3])
   router._pending = undefined
+  // Native hosts can retain a retired execution while its exit animation runs.
+  // Clear paint authority, but keep the renderer's acknowledgement object valid.
   const rendered = router._rendered
-  router._rendered = undefined
-  rendered?.[1]?.(false)
+  const settle = rendered?.[1]
+  if (rendered) {
+    rendered.length = 0
+  }
+  settle?.(false)
   const commit = router._commitPromise
   router._commitPromise = undefined
   commit?.resolve()

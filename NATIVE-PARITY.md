@@ -95,7 +95,8 @@ failures are reported while fresh navigation initialization remains available.
 
 ## Remaining substantial gaps
 
-- A native gesture-driven drawer and default pager host.
+- A native gesture-driven drawer. A Standard Navigation Material-style pager
+  is now demonstrated; there is still no built-in default pager host.
 - Complete deep-link source integration, destination/container mapping, and
   stricter URL-prefix boundaries.
 - Comprehensive device coverage of stacked modals, interrupted gestures, rapid
@@ -186,3 +187,17 @@ selected tab, stack positions, and drafts preserved. Inner edge-swipe Back and
 outer edge-swipe Back at the child root both completed without a crash.
 
 Android device behavior remains unverified in this change.
+
+## Standard Navigation integration
+
+Version-one Standard Navigators can now be adapted with
+`integrateStandardNavigator` while TanStack retains route and per-visit ownership.
+The app demonstrates custom Tastebuds-style Lottie tabs and Saved Archive/Buds
+Material-style swipe tabs, including cancellable Post presses and repeated-visit
+state retention. See [STANDARD-NAVIGATION.md](./STANDARD-NAVIGATION.md) for the
+API, demo, and native-stack mapper limitations.
+
+Device verification also exposed a retained-sheet disposal bug. The core now
+settles and clears pending paint acknowledgement contents without deleting the
+object still referenced by an outgoing native view. Closing Post's sheet now
+returns to the retained nested navigator without a render error.
