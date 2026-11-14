@@ -102,8 +102,10 @@ for (const count of [6, 50, 500]) {
   test(`standard descriptor projection with ${count} routes`, async ({
     bench,
   }) => {
-    const { createStandardNavigationArgs } =
-      await import('../src/native/standard-navigation')
+    const source = '../src/native/standard-navigation'
+    const { createStandardNavigationArgs } = await import(
+      /* @vite-ignore */ source
+    )
     const root = createRootRoute()
     const home = createRoute({ getParentRoute: () => root, path: '/' })
     const router = createRouter({ routeTree: root.addChildren([home]) })
