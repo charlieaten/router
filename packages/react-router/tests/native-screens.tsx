@@ -78,13 +78,27 @@ export function FormSheet({
   isOpen,
   children,
   onNativeDismissPrevented,
+  onDismiss,
 }: {
   isOpen: boolean
   children: React.ReactNode
   onNativeDismissPrevented?: () => void
+  onDismiss?: () => void
 }) {
-  return isOpen ? (
+  // Native sheets retain the outgoing subtree until their close animation ends.
+  const [dismissed, setDismissed] = React.useState(false)
+  return !dismissed ? (
     <div role="dialog">
+      {!isOpen && (
+        <button
+          onClick={() => {
+            setDismissed(true)
+            onDismiss?.()
+          }}
+        >
+          Finish native sheet dismissal
+        </button>
+      )}
       <button
         data-testid="native-sheet-close"
         onClick={onNativeDismissPrevented}
