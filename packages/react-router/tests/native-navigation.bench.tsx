@@ -156,3 +156,83 @@ for (const count of [6, 50, 500]) {
     router.history.destroy()
   })
 }
+
+for (const count of [10, 100]) {
+  for (const sheets of [false, true]) {
+    test(`custom stack rendering with ${count} ${sheets ? 'mixed page/sheet' : 'page'} visits`, async ({
+      bench,
+    }) => {
+      const React = await import('react')
+      const { act, render } = await import('@testing-library/react')
+      const native = await import('../dist/native/esm/index.native.js')
+      const controller = await import('../dist/native/esm/native/controller.js')
+      const root = native.createRootRoute({ component: native.Outlet })
+      const page = native.createRoute({
+        getParentRoute: () => root,
+        path: '/page/$id',
+        component: () => React.createElement('p', null, 'Page'),
+      })
+      const sheet = native.createRoute({
+        getParentRoute: () => root,
+        path: '/sheet/$id',
+        staticData: { native: { presentation: 'formSheet' } },
+        component: () => React.createElement('p', null, 'Sheet'),
+      })
+      let renders = 0
+      const router = native.createRouter({
+        routeTree: root.addChildren([page, sheet]),
+        native: {
+          initialContainer: 'main',
+          containers: { main: { initialHref: '/page/0' } },
+          renderStack: ({ children }) => {
+            renders++
+            return React.createElement(
+              React.Fragment,
+              null,
+              children.map((item) =>
+                React.createElement('section', { key: item.key }, item.content),
+              ),
+            )
+          },
+        },
+      })
+      const navigation = controller.getNativeNavigation(router)
+      await navigation.initialize()
+      for (let index = 1; index < count; index++) {
+        await navigation.navigate({
+          href: `/${sheets && index % 2 ? 'sheet' : 'page'}/${index}`,
+        })
+      }
+      const view = render(
+        React.createElement(native.RouterProvider, { router }),
+      )
+      const tick = async () => {
+        await act(() => navigation.navigate({ href: '/page/author' }))
+        await act(() => navigation.back())
+      }
+      await tick()
+      const before = renders
+      const result = await bench(
+        'native provider + custom stack push/back',
+        tick,
+      ).run({ time: 500, warmupIterations: 5 })
+      expect(renders).toBeGreaterThan(before)
+      expect(navigation.getSnapshot().stacks.main).toHaveLength(count)
+      console.log(
+        JSON.stringify({
+          count,
+          sheets,
+          name: result.name,
+          meanMs: result.latency.mean,
+          hz: result.throughput.mean,
+          p99Ms: result.latency.p99,
+          p999Ms: result.latency.p999,
+          rme: result.latency.rme,
+          samples: result.latency.samplesCount,
+        }),
+      )
+      view.unmount()
+      navigation.dispose()
+    })
+  }
+}

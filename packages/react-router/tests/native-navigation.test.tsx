@@ -1219,3 +1219,209 @@ it('preloads a sibling destination from a child of a pathless navigator without 
   expect(loader).toHaveBeenCalledTimes(1)
   router.history.destroy()
 })
+
+it('keeps the background page of a sheet active across normal pushes without keeping older pages active', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <h1>Home page</h1>,
+  })
+  const review = createRoute({
+    getParentRoute: () => root,
+    path: '/reviews/$id',
+    component: () => <h1>Review page</h1>,
+  })
+  function Comments() {
+    const [draft, setDraft] = React.useState('')
+    return (
+      <label>
+        Comments draft
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+      </label>
+    )
+  }
+  const comments = createRoute({
+    getParentRoute: () => root,
+    path: '/reviews/$id/comments',
+    staticData: { native: { presentation: 'formSheet' } },
+    component: Comments,
+  })
+  const author = createRoute({
+    getParentRoute: () => root,
+    path: '/users/$id',
+    component: () => <p>Author page</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home, review, comments, author]),
+    native: {
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/' } },
+      // A custom presenter attaches sheet content to the preceding native page.
+      // Both must remain renderable while the next native page is pushed.
+      renderStack: ({ children }) => (
+        <>
+          {children.map((item) => (
+            <section key={item.key}>{item.content}</section>
+          ))}
+        </>
+      ),
+    },
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Home page')
+  await act(() =>
+    router.navigate({ to: '/reviews/$id', params: { id: 'one' } }),
+  )
+  await act(() =>
+    router.navigate({ to: '/reviews/$id/comments', params: { id: 'one' } }),
+  )
+  fireEvent.change(screen.getByLabelText('Comments draft'), {
+    target: { value: 'Unsent draft' },
+  })
+  await act(() =>
+    router.navigate({ to: '/users/$id', params: { id: 'author' } }),
+  )
+  expect(screen.getByRole('heading', { name: 'Review page' })).toBeTruthy()
+  expect(screen.getByLabelText('Comments draft')).toHaveProperty(
+    'value',
+    'Unsent draft',
+  )
+  expect(screen.queryByRole('heading', { name: 'Home page' })).toBeNull()
+  await act(() =>
+    router.navigate({ to: '/users/$id', params: { id: 'another' } }),
+  )
+  expect(screen.queryByRole('heading', { name: 'Review page' })).toBeNull()
+  await act(() => navigation.back())
+  await act(() => navigation.back())
+  expect(screen.getByRole('heading', { name: 'Review page' })).toBeTruthy()
+  expect(screen.getByRole('textbox', { name: 'Comments draft' })).toBeTruthy()
+  expect(screen.getByLabelText('Comments draft')).toHaveProperty(
+    'value',
+    'Unsent draft',
+  )
+  await act(() => navigation.back())
+  expect(screen.queryByLabelText('Comments draft')).toBeNull()
+  expect(screen.getByRole('heading', { name: 'Review page' })).toBeTruthy()
+  router.history.destroy()
+})
+
+it('groups consecutive sheet visits with their page and restores each independent draft', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const review = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <h1>Review owner</h1>,
+  })
+  const sheet = createRoute({
+    getParentRoute: () => root,
+    path: '/comments/$id',
+    staticData: { native: { presentation: 'formSheet' } },
+    component: function Comments() {
+      const { id } = useParams({ strict: false })
+      const [draft, setDraft] = React.useState('')
+      return (
+        <label>
+          Draft {id}
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </label>
+      )
+    },
+  })
+  const author = createRoute({
+    getParentRoute: () => root,
+    path: '/users/$id',
+    component: () => <p>Author</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([review, sheet, author]),
+    native: {
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/' } },
+      renderStack: ({ children }) => (
+        <>
+          {children.map((item) => (
+            <section key={item.key}>{item.content}</section>
+          ))}
+        </>
+      ),
+    },
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Review owner')
+  await act(() =>
+    router.navigate({ to: '/comments/$id', params: { id: 'one' } }),
+  )
+  fireEvent.change(screen.getByLabelText('Draft one'), {
+    target: { value: 'First draft' },
+  })
+  await act(() =>
+    router.navigate({ to: '/comments/$id', params: { id: 'two' } }),
+  )
+  fireEvent.change(screen.getByLabelText('Draft two'), {
+    target: { value: 'Second draft' },
+  })
+  await act(() => router.navigate({ to: '/users/$id', params: { id: 'one' } }))
+  expect(screen.getByRole('heading', { name: 'Review owner' })).toBeTruthy()
+  expect(screen.getByRole('textbox', { name: 'Draft one' })).toHaveProperty(
+    'value',
+    'First draft',
+  )
+  expect(screen.getByRole('textbox', { name: 'Draft two' })).toHaveProperty(
+    'value',
+    'Second draft',
+  )
+  await act(() => router.navigate({ to: '/users/$id', params: { id: 'two' } }))
+  expect(screen.queryByRole('textbox', { name: 'Draft one' })).toBeNull()
+  expect(screen.queryByRole('heading', { name: 'Review owner' })).toBeNull()
+  await act(() => navigation.back({ count: 2 }))
+  expect(screen.getByRole('textbox', { name: 'Draft two' })).toHaveProperty(
+    'value',
+    'Second draft',
+  )
+  await act(() => navigation.back())
+  expect(screen.queryByLabelText('Draft two')).toBeNull()
+  expect(screen.getByRole('textbox', { name: 'Draft one' })).toHaveProperty(
+    'value',
+    'First draft',
+  )
+  await act(() => navigation.reset('main', ['/']))
+  expect(screen.queryByLabelText('Draft one')).toBeNull()
+  expect(screen.getByRole('heading', { name: 'Review owner' })).toBeTruthy()
+  router.history.destroy()
+})
+
+it('renders a standalone initial sheet in a custom stack', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const sheet = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    staticData: { native: { presentation: 'formSheet' } },
+    component: () => <h1>Initial sheet</h1>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([sheet]),
+    native: {
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/' } },
+      renderStack: ({ children }) => (
+        <>
+          {children.map((item) => (
+            <section key={item.key}>{item.content}</section>
+          ))}
+        </>
+      ),
+    },
+  })
+  render(<RouterProvider router={router} />)
+  await screen.findByRole('heading', { name: 'Initial sheet' })
+  router.history.destroy()
+})
