@@ -372,6 +372,16 @@ function NativeContainer({
     const CustomStack = config.renderStack
     if (CustomStack) {
       const entries = state.stacks[id]!
+      const options = entries.map(getScreenOptions)
+      // A sheet shares its preceding native page slot. Keep the last two page
+      // groups renderable for native pushes/pops, not just two logical visits.
+      let page = -1
+      const pages = options.map((option) => {
+        if (page < 0 || option.presentation !== 'formSheet') {
+          page++
+        }
+        return page
+      })
       return (
         <CustomStack
           id={id}
@@ -389,16 +399,16 @@ function NativeContainer({
           })}
           children={entries.map((entry, index) => ({
             key: entry.key,
-            title: getScreenOptions(entry).title ?? entry.href,
+            title: options[index]!.title ?? entry.href,
             preventDismiss: navigation.isRemovalBlocked(entry.key),
-            options: getScreenOptions(entry),
+            options: options[index],
             content: (
               <Entry
                 entry={entry}
                 active={
-                  !!getScreenOptions(entry).keepActive ||
+                  !!options[index]!.keepActive ||
                   navigation.isRemovalBlocked(entry.key) ||
-                  (selected && index >= entries.length - 2)
+                  (selected && pages[index]! >= page - 1)
                 }
               />
             ),
