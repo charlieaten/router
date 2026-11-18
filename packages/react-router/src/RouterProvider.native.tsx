@@ -18,8 +18,8 @@ import {
 } from 'react-native-screens'
 import { Matches } from './Matches'
 import { RouterContextProvider } from './RouterProviderShared'
-import { entryContext } from './native/context'
 import { nativeOutletContext } from './native/outlet-context'
+import { VisitProvider } from './native/visit'
 import {
   emitNativeNavigationEvent,
   flushNativeNavigation,
@@ -38,6 +38,7 @@ import type {
 
 function Entry({ entry, active }: { entry: NativeEntry; active: boolean }) {
   const owner = getNativeNavigation(entry.value).getOwner()
+  const Wrap = entry.value.options.Wrap ?? React.Fragment
   const definition = getEntryNavigatorOptions(entry)
   const nested =
     entry.navigator && definition
@@ -55,15 +56,15 @@ function Entry({ entry, active }: { entry: NativeEntry; active: boolean }) {
       : undefined
   return (
     <React.Activity mode={active ? 'visible' : 'hidden'}>
-      <entryContext.Provider value={entry}>
-        <RouterContextProvider router={entry.value}>
+      <VisitProvider entry={entry}>
+        <Wrap>
           <nativeOutletContext.Provider value={nested}>
             <Matches
               afterRouteId={owner?.entry.value.state.matches.at(-1)?.routeId}
             />
           </nativeOutletContext.Provider>
-        </RouterContextProvider>
-      </entryContext.Provider>
+        </Wrap>
+      </VisitProvider>
     </React.Activity>
   )
 }
@@ -132,6 +133,25 @@ function NativeStack({
             target: entry.key,
             closing,
           })
+        // With no custom header configuration there is no React chrome to
+        // scope. Leave standalone content's boundary inside its Activity.
+        const content = (
+          <>
+            <Stack.HeaderConfig
+              title={options.title ?? entry.href}
+              {...options.header}
+            />
+            <Entry
+              entry={entry}
+              active={
+                !!options.keepActive ||
+                index < 0 ||
+                navigation.isRemovalBlocked(entry.key) ||
+                (selected && index >= entries.length - 2)
+              }
+            />
+          </>
+        )
         return (
           <Stack.Screen
             {...options.stack}
@@ -157,19 +177,11 @@ function NativeStack({
             }}
             onDismiss={forget}
           >
-            <Stack.HeaderConfig
-              title={options.title ?? entry.href}
-              {...options.header}
-            />
-            <Entry
-              entry={entry}
-              active={
-                !!options.keepActive ||
-                index < 0 ||
-                navigation.isRemovalBlocked(entry.key) ||
-                (selected && index >= entries.length - 2)
-              }
-            />
+            {options.header ? (
+              <VisitProvider entry={entry}>{content}</VisitProvider>
+            ) : (
+              content
+            )}
           </Stack.Screen>
         )
       })}
@@ -402,6 +414,9 @@ function NativeContainer({
             title: options[index]!.title ?? entry.href,
             preventDismiss: navigation.isRemovalBlocked(entry.key),
             options: options[index],
+            wrap: (children) => (
+              <VisitProvider entry={entry}>{children}</VisitProvider>
+            ),
             content: (
               <Entry
                 entry={entry}

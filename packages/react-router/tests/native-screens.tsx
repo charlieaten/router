@@ -42,7 +42,26 @@ function Screen({
   )
 }
 
-export const Stack = { Host, Screen, HeaderConfig: () => null }
+function HeaderConfig({ ios, android }: any) {
+  return (
+    <header>
+      {ios?.titleItem?.render?.()}
+      {ios?.subtitleItem?.render?.()}
+      {ios?.largeSubtitleItem?.render?.()}
+      {ios?.leadingItems?.map((item: any) => (
+        <React.Fragment key={item.id}>{item.render?.()}</React.Fragment>
+      ))}
+      {ios?.trailingItems?.map((item: any) => (
+        <React.Fragment key={item.id}>{item.render?.()}</React.Fragment>
+      ))}
+      {android?.backgroundSubview?.render?.()}
+      {android?.leadingSubview?.render?.()}
+      {android?.centerSubview?.render?.()}
+      {android?.trailingSubview?.render?.()}
+    </header>
+  )
+}
+export const Stack = { Host, Screen, HeaderConfig }
 function TabsHost({
   children,
   navStateRequest,

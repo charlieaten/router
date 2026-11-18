@@ -170,6 +170,18 @@ for (const count of [10, 100]) {
       const page = native.createRoute({
         getParentRoute: () => root,
         path: '/page/$id',
+        staticData: {
+          native: {
+            header: {
+              ios: {
+                titleItem: {
+                  id: 'title',
+                  render: () => React.createElement('span', null, 'Title'),
+                },
+              },
+            },
+          },
+        },
         component: () => React.createElement('p', null, 'Page'),
       })
       const sheet = native.createRoute({
@@ -189,9 +201,19 @@ for (const count of [10, 100]) {
             return React.createElement(
               React.Fragment,
               null,
-              children.map((item) =>
-                React.createElement('section', { key: item.key }, item.content),
-              ),
+              children.map((item) => {
+                const content = React.createElement(
+                  'section',
+                  null,
+                  item.options?.header?.ios?.titleItem?.render?.(),
+                  item.content,
+                )
+                return React.createElement(
+                  React.Fragment,
+                  { key: item.key },
+                  item.wrap ? item.wrap(content) : content,
+                )
+              }),
             )
           },
         },
@@ -234,5 +256,133 @@ for (const count of [10, 100]) {
       view.unmount()
       navigation.dispose()
     })
+  }
+}
+
+for (const presenter of ['default', 'shared'] as const) {
+  for (const count of [10, 100]) {
+    for (const slots of [0, 3]) {
+      test(`visit boundary ${presenter} ${count} visits ${slots} slots`, async ({
+        bench,
+      }) => {
+        const React = await import('react')
+        const { act, render } = await import('@testing-library/react')
+        const native = await import('../dist/native/esm/index.native.js')
+        const { getNativeNavigation } =
+          await import('../dist/native/esm/native/controller.js')
+        const { Stack } = await import('./native-screens')
+        const root = native.createRootRoute({ component: native.Outlet })
+        let mounts = 0
+        let renders = 0
+        function Title() {
+          const { id } = native.useParams({ strict: false })
+          renders++
+          React.useState(() => {
+            mounts++
+            return null
+          })
+          return React.createElement('span', { 'data-title': id }, id)
+        }
+        const title = () => React.createElement(Title)
+        const page = native.createRoute({
+          getParentRoute: () => root,
+          path: '/page/$id',
+          staticData: {
+            native: {
+              header: slots
+                ? {
+                    ios: {
+                      titleItem: { id: 'title', render: title },
+                      leadingItems: [
+                        { id: 'leading', type: 'item', render: title },
+                      ],
+                      trailingItems: [
+                        { id: 'trailing', type: 'item', render: title },
+                      ],
+                    },
+                  }
+                : undefined,
+            },
+          },
+          component: () => React.createElement('p', null, page.useParams().id),
+        })
+        const router = native.createRouter({
+          routeTree: root.addChildren([page]),
+          native: {
+            initialContainer: 'main',
+            containers: { main: { initialHref: '/page/0' } },
+            renderStack:
+              presenter === 'default'
+                ? undefined
+                : ({ children }) =>
+                    React.createElement(
+                      React.Fragment,
+                      null,
+                      children.map((item) => {
+                        const content = React.createElement(
+                          'section',
+                          null,
+                          React.createElement(
+                            Stack.HeaderConfig,
+                            item.options?.header,
+                          ),
+                          item.content,
+                        )
+                        return React.createElement(
+                          React.Fragment,
+                          { key: item.key },
+                          item.wrap ? item.wrap(content) : content,
+                        )
+                      }),
+                    ),
+          },
+        })
+        const navigation = getNativeNavigation(router)
+        await navigation.initialize()
+        for (let i = 1; i < count; i++) {
+          await navigation.navigate({ href: `/page/${i}` })
+        }
+        const view = render(
+          React.createElement(native.RouterProvider, { router }),
+        )
+        await act(async () => {
+          await Promise.resolve()
+        })
+        expect(
+          view.container.querySelectorAll('[data-title="0"]'),
+        ).toHaveLength(slots)
+        const tick = async () => {
+          await act(() => navigation.navigate({ href: '/page/author' }))
+          await act(() => navigation.back())
+        }
+        await tick()
+        const beforeMounts = mounts
+        const beforeRenders = renders
+        const result = await bench('visit boundary push/pop', tick).run({
+          time: 1000,
+          warmupIterations: 5,
+        })
+        expect(
+          view.container.querySelectorAll('[data-title="0"]'),
+        ).toHaveLength(slots)
+        expect(navigation.getSnapshot().stacks.main).toHaveLength(count)
+        console.log(
+          JSON.stringify({
+            presenter,
+            count,
+            slots,
+            meanMs: result.latency.mean,
+            p99Ms: result.latency.p99,
+            p999Ms: result.latency.p999,
+            rme: result.latency.rme,
+            samples: result.latency.samplesCount,
+            mounts: mounts - beforeMounts,
+            renders: renders - beforeRenders,
+          }),
+        )
+        view.unmount()
+        navigation.dispose()
+      })
+    }
   }
 }

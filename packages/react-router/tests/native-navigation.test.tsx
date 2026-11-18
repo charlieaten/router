@@ -18,6 +18,7 @@ import {
   createRouter,
   useBlocker,
   useNavigate,
+  useNavigation,
   useParams,
 } from '../dist/native/esm/index.native.js'
 import { getNativeNavigation } from '../dist/native/esm/native/controller.js'
@@ -1425,3 +1426,183 @@ it('renders a standalone initial sheet in a custom stack', async () => {
   await screen.findByRole('heading', { name: 'Initial sheet' })
   router.history.destroy()
 })
+
+it.each([
+  ['default', 'ios'],
+  ['default', 'android'],
+  ['shared', 'ios'],
+  ['shared', 'android'],
+] as const)(
+  'scopes %s %s header slots to duplicate visits across nested stacks and Suspense',
+  async (presenter, platform) => {
+    let version = 0
+    let ready = false
+    let resume!: () => void
+    const pending = new Promise<void>((resolve) => {
+      resume = resolve
+    })
+    function Title() {
+      const params = useParams({ strict: false })
+      const navigation = useNavigation()
+      const loaded = detail.useLoaderData()
+      const explicit = detail.useParams()
+      const [count, setCount] = React.useState(0)
+      if (params.id === 'b' && !ready) {
+        throw pending
+      }
+      return (
+        <>
+          <span data-loader={loaded} data-param={explicit.id}>
+            Header {params.id}
+          </span>
+          <button onClick={() => setCount(count + 1)}>
+            Count {params.id}: {count}
+          </button>
+          <button onClick={() => void navigation.back()}>
+            Back from {params.id}
+          </button>
+        </>
+      )
+    }
+    const title = () => (
+      <React.Suspense fallback={<span>Loading title</span>}>
+        <Title />
+      </React.Suspense>
+    )
+    const root = createRootRoute({ component: Outlet })
+    const home = createRoute({
+      getParentRoute: () => root,
+      path: '/',
+      component: () => <p>Home</p>,
+    })
+    const parent = createRoute({
+      getParentRoute: () => root,
+      path: '/nested',
+      component: Outlet,
+      staticData: {
+        native: {
+          navigator: {
+            initialContainer: 'inner',
+            containers: { inner: { initialHref: '/nested/item/a' } },
+          },
+        },
+      },
+    })
+    const detail = createRoute({
+      getParentRoute: () => parent,
+      path: 'item/$id',
+      loader: ({ params }) => `${params.id}:${version}`,
+      staticData: {
+        native: {
+          header:
+            platform === 'ios'
+              ? { ios: { titleItem: { id: 'title', render: title } } }
+              : { android: { centerSubview: { render: title } } },
+        },
+      },
+      component: function Body() {
+        const { id } = detail.useParams()
+        const [count, setCount] = React.useState(0)
+        return (
+          <>
+            <p>Body {id}</p>
+            <button onClick={() => setCount(count + 1)}>
+              Body count {id}: {count}
+            </button>
+          </>
+        )
+      },
+    })
+    const custom = ({ children }: any) => (
+      <>
+        {children.map((item: any) => {
+          const content = (
+            <section>
+              <header>
+                {item.options?.header?.ios?.titleItem?.render()}
+                {item.options?.header?.android?.centerSubview?.render()}
+              </header>
+              {item.content}
+            </section>
+          )
+          return (
+            <React.Fragment key={item.key}>{item.wrap(content)}</React.Fragment>
+          )
+        })}
+      </>
+    )
+    if (presenter !== 'default') {
+      parent.options.staticData!.native!.navigator = {
+        initialContainer: 'inner',
+        containers: { inner: { initialHref: '/nested/item/a' } },
+        renderStack: custom,
+      }
+    }
+    const router = createRouter({
+      routeTree: root.addChildren([home, parent.addChildren([detail])]),
+      Wrap: ({ children }) => (
+        <div data-testid="application-wrap">{children}</div>
+      ),
+    })
+    const navigation = getNativeNavigation(router)
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Home')
+    await act(() => navigation.navigate({ href: '/nested' }))
+    await screen.findByText('Header a')
+    expect(screen.getByText('Header a').getAttribute('data-loader')).toBe('a:0')
+    expect(screen.getByText('Header a').getAttribute('data-param')).toBe('a')
+    const outerWrap = screen.getAllByTestId('application-wrap')[0]
+    for (const back of screen.getAllByTestId('native-back')) {
+      expect(back.closest('[data-testid=application-wrap]')).toBe(outerWrap)
+    }
+    fireEvent.click(screen.getByText('Body count a: 0'))
+    fireEvent.click(screen.getByText('Count a: 0'))
+    const child = navigation
+      .getActivePath()
+      .find((entry) => entry.navigator)!.navigator!
+    const originalKey = child.getActiveEntry()!.key
+    await act(() =>
+      child.navigate({ href: '/nested/item/a?sort=recent', behavior: 'reuse' }),
+    )
+    expect(child.getActiveEntry()!.key).toBe(originalKey)
+    expect(screen.getByText('Count a: 1')).toBeTruthy()
+    expect(screen.getByText('Body count a: 1')).toBeTruthy()
+    await act(() => child.navigate({ href: '/nested/item/b' }))
+    await screen.findByText('Body b')
+    await screen.findByText('Loading title')
+    expect(screen.getByText('Header a')).toBeTruthy()
+    await act(async () => {
+      ready = true
+      resume()
+      await pending
+    })
+    await screen.findByText('Header b')
+    version = 1
+    await act(() => child.getActiveEntry()!.value.invalidate())
+    await waitFor(() =>
+      expect(screen.getByText('Header b').getAttribute('data-loader')).toBe(
+        'b:1',
+      ),
+    )
+    fireEvent.click(screen.getByText('Count b: 0'))
+    await act(() =>
+      child.navigate({ href: '/nested/item/b', behavior: 'push' }),
+    )
+    expect(screen.getAllByText('Header b')).toHaveLength(2)
+    expect(screen.getByText('Count b: 0')).toBeTruthy()
+    expect(screen.getByText('Count b: 1')).toBeTruthy()
+    fireEvent.click(screen.getAllByText('Back from b').at(-1)!)
+    await waitFor(() => expect(screen.getAllByText('Header b')).toHaveLength(1))
+    expect(screen.getByText('Count b: 1')).toBeTruthy()
+    fireEvent.click(screen.getByText('Back from b'))
+    await waitFor(() => expect(screen.queryByText('Header b')).toBeNull())
+    expect(screen.getByText('Count a: 1')).toBeTruthy()
+    expect(screen.getByText('Body count a: 1')).toBeTruthy()
+    expect(screen.getByText('Header a')).toBeTruthy()
+    await act(() =>
+      navigation.navigate({ href: '/nested?refresh=1', behavior: 'reuse' }),
+    )
+    expect(screen.getByText('Count a: 1')).toBeTruthy()
+    expect(screen.getByText('Body count a: 1')).toBeTruthy()
+  },
+)
