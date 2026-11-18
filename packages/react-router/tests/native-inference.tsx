@@ -9,7 +9,10 @@ import {
   integrateStandardNavigator,
   linkOptions,
 } from '@tanstack/react-router'
-import type { NativeNavigatorOptions } from '@tanstack/react-router'
+import type {
+  NativeContainerRenderProps,
+  NativeNavigatorOptions,
+} from '@tanstack/react-router'
 import type { AnyRouteMatch } from '@tanstack/router-core'
 
 const root = createRootRouteWithContext<{ session: string }>()({})
@@ -106,3 +109,13 @@ integrateStandardNavigator(standardNavigator, {
 integrateStandardNavigator(standardNavigator, {
   screenOptions: () => ({ title: 'Tabs' }),
 })
+
+function TypedNativeStack({ children }: NativeContainerRenderProps) {
+  return (
+    <>
+      {children.map((item) =>
+        item.wrap ? item.wrap(item.content) : item.content,
+      )}
+    </>
+  )
+}

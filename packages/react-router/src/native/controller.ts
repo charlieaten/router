@@ -698,6 +698,10 @@ export interface NativeContainerRenderProps {
     key: string
     title: string
     content: React.ReactNode
+    /** Render this visit's header and content under one routing boundary.
+     * Call as a render function, not as a component. Absent on container items.
+     */
+    wrap?: (children: React.ReactNode) => React.ReactElement
     preventDismiss?: boolean
     options?: NativeScreenOptions
     tab?: NativeNavigationContainer['tab']
