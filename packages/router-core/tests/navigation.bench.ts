@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { createNavigation } from '../src/navigation'
+import type { NavigationDefinition } from '../src/navigation'
 
 for (const retained of [0, 100, 1000]) {
   test(`presentation push/back with ${retained} inactive visits`, async ({
@@ -212,4 +213,108 @@ for (const count of [10, 100, 1000]) {
     expect(query()).toBe(0)
     navigation.dispose()
   })
+}
+
+for (const retained of [1, 100]) {
+  for (const blocked of [false, true]) {
+    test(`owner-activation with ${retained} inactive visits and blocker ${blocked}`, async ({
+      bench,
+    }) => {
+      const navigation = createNavigation<string>({
+        initialContainer: 'app',
+        containers: { app: { initialHref: '/' } },
+        prepare: async (entry) => ({ value: entry.href }),
+        getNavigator: (entry): NavigationDefinition | undefined =>
+          entry.href === '/'
+            ? {
+                rootKind: 'tabs',
+                initialContainer: 'map',
+                containers: {
+                  map: { initialHref: '/map' },
+                  saved: { initialHref: '/saved' },
+                  inactive: { initialHref: '/inactive' },
+                },
+              }
+            : entry.href === '/saved'
+              ? {
+                  rootKind: 'tabs',
+                  initialContainer: 'archive',
+                  containers: {
+                    archive: { initialHref: '/saved/archive' },
+                    buds: { initialHref: '/saved/buds' },
+                  },
+                }
+              : undefined,
+      })
+      await navigation.initialize()
+      const owner = navigation.getSnapshot().stacks.app![0]!
+      const tabs = owner.navigator!
+      await tabs.select('saved')
+      const saved = tabs.getSnapshot().stacks.saved![0]!.navigator!
+      await saved.select('buds')
+      const destination = navigation.getActiveEntry()
+      await tabs.reset(
+        'inactive',
+        Array.from({ length: retained }, (_, i) => `/inactive/${i}`),
+      )
+      await tabs.select('map')
+      const unblock = blocked
+        ? tabs.block(tabs.getSnapshot().stacks.map![0]!.key, () => false)
+        : undefined
+      const atomic = navigation as typeof navigation & {
+        activate?: (
+          resolve: (node: typeof navigation) => {
+            target: string
+            key?: string
+            descend?: boolean
+          },
+        ) => Promise<boolean>
+      }
+      const restore = async () => {
+        if (atomic.activate) {
+          await atomic.activate((node) =>
+            node === navigation
+              ? { target: 'app', key: owner.key, descend: true }
+              : node === tabs
+                ? { target: 'saved', descend: true }
+                : { target: 'buds' },
+          )
+        } else {
+          await navigation.popToTop({ target: 'app' })
+          await tabs.select('saved')
+          await saved.select('buds')
+        }
+      }
+      const tick = async () => {
+        await navigation.navigate({ href: '/cover' })
+        await restore()
+      }
+      await tick()
+      expect(navigation.getActiveEntry()).toBe(destination)
+      expect(navigation.getSnapshot().stacks.app).toHaveLength(1)
+      for (const [name, fn] of [
+        ['return', tick],
+        ['same-tab', restore],
+      ] as const) {
+        const result = await bench(`${name}-${retained}-${blocked}`, fn).run({
+          time: 600,
+          warmupIterations: 20,
+        })
+        console.log(
+          JSON.stringify({
+            name: result.name,
+            meanMs: result.latency.mean,
+            p99Ms: result.latency.p99,
+            p999Ms: result.latency.p999,
+            hz: result.throughput.mean,
+            rme: result.latency.rme,
+            samples: result.latency.samplesCount,
+          }),
+        )
+      }
+      expect(navigation.getActiveEntry()).toBe(destination)
+      unblock?.()
+      navigation.dispose()
+    })
+  }
 }

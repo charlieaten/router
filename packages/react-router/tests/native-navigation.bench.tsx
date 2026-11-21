@@ -386,3 +386,149 @@ for (const presenter of ['default', 'shared'] as const) {
     }
   }
 }
+
+for (const count of [2, 5]) {
+  test(`plain tab presentation with ${count} tabs`, async ({ bench }) => {
+    const React = await import('react')
+    const { act, render } = await import('@testing-library/react')
+    const native = await import('../dist/native/esm/index.native.js')
+    const controller = await import('../dist/native/esm/native/controller.js')
+    Object.assign(window, { scrollTo: () => {} })
+    const root = native.createRootRoute({ component: native.Outlet })
+    let mounts = 0
+    const routes = Array.from({ length: count }, (_, index) =>
+      native.createRoute({
+        getParentRoute: () => root,
+        path: `/tab-${index}`,
+        component: function TabPage() {
+          React.useState(() => ++mounts)
+          return React.createElement('p', null, `Tab ${index}`)
+        },
+      }),
+    )
+    const router = native.createRouter({
+      routeTree: root.addChildren(routes),
+      native: {
+        rootKind: 'tabs',
+        initialContainer: 'tab-0',
+        containers: Object.fromEntries(
+          routes.map((_, index) => [
+            `tab-${index}`,
+            { initialHref: `/tab-${index}` },
+          ]),
+        ),
+      },
+    })
+    const navigation = controller.getNativeNavigation(router)
+    await navigation.initialize()
+    const view = render(React.createElement(native.RouterProvider, { router }))
+    const tick = async () => {
+      for (let index = 1; index < count; index++) {
+        await act(() => navigation.select(`tab-${index}`))
+      }
+      await act(() => navigation.select('tab-0'))
+    }
+    await tick()
+    expect(navigation.getFocusedContainer()).toBe('tab-0')
+    expect(mounts).toBe(count)
+    const retainedKeys = navigation.getEntries().map((entry) => entry.key)
+    const result = await bench(
+      'select retained tabs through native provider',
+      tick,
+    ).run({ time: 1000, warmupIterations: 10 })
+    console.log(
+      JSON.stringify({
+        count,
+        name: result.name,
+        meanMs: result.latency.mean,
+        p99Ms: result.latency.p99,
+        p999Ms: result.latency.p999,
+        rme: result.latency.rme,
+        samples: result.latency.samplesCount,
+      }),
+    )
+    expect(mounts).toBe(count)
+    expect(navigation.getEntries().map((entry) => entry.key)).toEqual(
+      retainedKeys,
+    )
+    view.unmount()
+    router.history.destroy()
+  })
+}
+
+for (const depth of [1, 50, 200]) {
+  test(`owner-resolver ordinary leaf at stack depth ${depth}`, async ({
+    bench,
+  }) => {
+    const root = createRootRoute()
+    const layout = createRoute({
+      getParentRoute: () => root,
+      id: '_tabs',
+      staticData: {
+        native: {
+          navigator: {
+            rootKind: 'tabs',
+            initialContainer: 'map',
+            containers: {
+              map: { initialHref: '/' },
+              saved: { initialHref: '/saved' },
+            },
+          },
+        },
+      },
+    })
+    const map = createRoute({
+      getParentRoute: () => layout,
+      id: '_map',
+      staticData: {
+        native: {
+          navigator: {
+            rootKind: 'custom',
+            initialContainer: 'main',
+            containers: { main: { initialHref: '/', kind: 'stack' } },
+          },
+        },
+      },
+    })
+    const home = createRoute({ getParentRoute: () => map, path: '/' })
+    const item = createRoute({ getParentRoute: () => map, path: '/item/$id' })
+    const saved = createRoute({ getParentRoute: () => layout, path: '/saved' })
+    const router = createRouter({
+      routeTree: root.addChildren([
+        layout.addChildren([map.addChildren([home, item]), saved]),
+      ]),
+    })
+    const navigation = getNativeNavigation(router)
+    await navigation.initialize()
+    const tabs = navigation.getSnapshot().stacks.main![0]!.navigator!
+    const stack = tabs.getSnapshot().stacks.map![0]!.navigator!
+    await stack.reset(
+      'main',
+      Array.from({ length: depth }, (_, i) => `/item/${i}`),
+    )
+    const original = navigation.getActiveEntry()
+    const tick = async () => {
+      await router.navigate({ to: '/item/$id', params: { id: 'next' } })
+      await navigation.back()
+    }
+    await tick()
+    expect(navigation.getActiveEntry()).toBe(original)
+    const result = await bench(`leaf-${depth}`, tick).run({
+      time: 700,
+      warmupIterations: 20,
+    })
+    console.log(
+      JSON.stringify({
+        name: result.name,
+        meanMs: result.latency.mean,
+        p99Ms: result.latency.p99,
+        p999Ms: result.latency.p999,
+        hz: result.throughput.mean,
+        rme: result.latency.rme,
+        samples: result.latency.samplesCount,
+      }),
+    )
+    expect(stack.getSnapshot().stacks.main).toHaveLength(depth)
+    router.history.destroy()
+  })
+}

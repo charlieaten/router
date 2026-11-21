@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createNavigation } from '../src/navigation'
+import type { NavigationChange, NavigationDefinition } from '../src/navigation'
 
 function setup() {
   let sequence = 0
@@ -293,4 +294,154 @@ describe('presentation histories', () => {
     ).toHaveLength(1)
     expect(navigation.getActiveEntry()?.href).toBe('/')
   })
+})
+
+it('initializes an inactive branch without changing selection, history or its owner', async () => {
+  const { navigation, dispose } = setup()
+  await navigation.initialize()
+  const first = navigation.getActiveEntry()
+  const before = navigation.getSnapshot()
+  await navigation.initialize('search')
+  expect(navigation.getSnapshot().stacks.search).toHaveLength(1)
+  expect(navigation.getActiveEntry()).toBe(first)
+  expect(navigation.getSnapshot().selected).toBe(before.selected)
+  expect(navigation.getSnapshot().history).toEqual(before.history)
+  const search = navigation.getSnapshot().stacks.search![0]
+  await navigation.initialize('search')
+  expect(navigation.getSnapshot().stacks.search).toEqual([search])
+  expect(dispose).not.toHaveBeenCalled()
+  navigation.dispose()
+})
+
+it('atomically activates a nested owner path and preserves it when a covering page blocks', async () => {
+  const dispose = vi.fn()
+  const navigation = createNavigation<{ href: string }>({
+    initialContainer: 'app',
+    containers: { app: { initialHref: '/' } },
+    prepare: async (entry) => ({ value: { href: entry.href } }),
+    dispose,
+    getNavigator: (entry): NavigationDefinition | undefined =>
+      entry.container === 'app' && entry.href === '/'
+        ? {
+            rootKind: 'tabs',
+            initialContainer: 'map',
+            containers: {
+              map: { initialHref: '/map' },
+              saved: { initialHref: '/saved' },
+            },
+          }
+        : entry.container === 'saved'
+          ? {
+              rootKind: 'tabs',
+              initialContainer: 'archive',
+              containers: {
+                archive: { initialHref: '/saved/archive' },
+                buds: { initialHref: '/saved/buds' },
+              },
+            }
+          : undefined,
+  })
+  await navigation.initialize()
+  const owner = navigation.getSnapshot().stacks.app![0]!
+  const tabs = owner.navigator!
+  await navigation.navigate({ href: '/cover' })
+  const covering = navigation.getActiveEntry()!
+  const block = vi.fn((_change: NavigationChange<{ href: string }>) => true)
+  const unblock = navigation.block(covering.key, block)
+  const rootBefore = navigation.getSnapshot()
+  const tabsBefore = tabs.getSnapshot()
+  const resolve: Parameters<typeof navigation.activate>[0] = (node) =>
+    !node.getOwner()
+      ? { target: 'app', key: owner.key, descend: true }
+      : node.getOwner()!.entry.container === 'app'
+        ? { target: 'saved', descend: true }
+        : { target: 'buds' }
+  const observed: string[] = []
+  navigation.onTreeChange(() =>
+    observed.push(navigation.getActiveEntry()!.href),
+  )
+  expect(await navigation.activate(resolve)).toBe(false)
+  expect(navigation.getSnapshot()).toBe(rootBefore)
+  expect(tabs.getSnapshot()).toBe(tabsBefore)
+  expect(block).toHaveBeenCalledTimes(1)
+  expect(block.mock.calls[0]![0].destination?.href).toBe('/saved/buds')
+  expect(observed).toEqual([])
+  expect(dispose.mock.calls.map(([entry]) => entry.href).sort()).toEqual(
+    ['/saved', '/saved/archive', '/saved/buds'].sort(),
+  )
+  unblock()
+  expect(await navigation.activate(resolve)).toBe(true)
+  expect(navigation.getSnapshot().stacks.app).toEqual([owner])
+  expect(tabs.getFocusedContainer()).toBe('saved')
+  expect(navigation.getActiveEntry()!.href).toBe('/saved/buds')
+  expect(observed).toEqual(['/saved/buds'])
+  navigation.dispose()
+})
+
+it('superseding an owner activation releases abandoned preparations exactly once', async () => {
+  let finish!: () => void
+  let started!: () => void
+  const waiting = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  const dispose = vi.fn()
+  const navigation = createNavigation<{ href: string }>({
+    initialContainer: 'main',
+    containers: { main: { initialHref: '/' } },
+    prepare: async (entry) => {
+      if (entry.href === '/slow') {
+        started()
+        await gate
+      }
+      return { value: { href: entry.href } }
+    },
+    dispose,
+  })
+  await navigation.initialize()
+  const pending = navigation.activate(() => ({ request: { href: '/slow' } }))
+  await waiting
+  await navigation.navigate({ href: '/winner' })
+  finish()
+  expect(await pending).toBe(false)
+  expect(navigation.getActiveEntry()!.href).toBe('/winner')
+  expect(dispose.mock.calls.map(([entry]) => entry.href)).toEqual(['/slow'])
+  navigation.dispose()
+})
+
+it('owner activation reports pushes to blockers and survives synchronous observer disposal', async () => {
+  const navigation = createNavigation<{ href: string }>({
+    initialContainer: 'main',
+    containers: { main: { initialHref: '/' } },
+    prepare: async (entry) => ({ value: { href: entry.href } }),
+    getNavigator: (entry) =>
+      entry.href === '/'
+        ? {
+            initialContainer: 'child',
+            containers: { child: { initialHref: '/child' } },
+          }
+        : undefined,
+  })
+  await navigation.initialize()
+  const child = navigation.getActivePath()[0]!.navigator!
+  const blocked = vi.fn((_change: NavigationChange<{ href: string }>) => true)
+  const unbind = child.block(child.getActiveEntry()!.key, blocked)
+  expect(
+    await child.activate(() => ({
+      request: { href: '/next', behavior: 'replace' },
+    })),
+  ).toBe(false)
+  expect(blocked.mock.calls.length).toBe(1)
+  expect(blocked.mock.calls[0]![0].historyAction).toBe('REPLACE')
+  unbind()
+  const changes: NavigationChange<{ href: string }>[] = []
+  child.onChange((change) => changes.push(change))
+  await child.activate(() => ({ request: { href: '/pushed' } }))
+  expect(changes.at(-1)!.historyAction).toBe('PUSH')
+  child.subscribe(() => navigation.dispose())
+  await expect(
+    child.activate(() => ({ request: { href: '/next' } })),
+  ).resolves.toBe(true)
 })

@@ -56,7 +56,7 @@ export function useBlocker<
     let registered = true
     const unblock = navigation.block(entry.key, async (change) => {
       const options = optionsRef.current
-      const next = navigation.getActiveEntry(change.next)
+      const next = change.destination ?? navigation.getActiveEntry(change.next)
       const args = {
         current: location(entry),
         next: location(next ?? entry),

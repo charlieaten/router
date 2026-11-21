@@ -62,6 +62,8 @@ function bindNavigation(
   }
   return {
     ...navigation,
+    activate: (resolve, options) =>
+      dispatch(() => navigation.activate(resolve, options)),
     navigate: (request) =>
       dispatch(() => navigation.navigate({ target, ...request })),
     back: (options) => dispatch(() => navigation.back({ target, ...options })),

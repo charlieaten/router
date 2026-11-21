@@ -381,6 +381,35 @@ function NativeContainer({
   const definitions = config.containers
   const children = navigation.getChildren(id)
   if (id && !children.length) {
+    const parent = definitions[id]?.parent
+    const kind =
+      definitions[id]?.kind ??
+      (parent ? (definitions[parent]?.kind ?? 'tabs') : config.rootKind)
+    // Branch history retains visit state; only an explicit stack navigator
+    // introduces stack presentation. Pagers can keep adjacent pages visible.
+    if (kind === 'tabs' || kind === 'drawer' || kind === 'custom') {
+      const entries = state.stacks[id]!
+      return entries.map((entry, index) => (
+        <View
+          key={entry.key}
+          style={{
+            flex: 1,
+            display: index === entries.length - 1 ? 'flex' : 'none',
+          }}
+        >
+          <Entry
+            entry={entry}
+            active={
+              navigation.isRemovalBlocked(entry.key) ||
+              (index === entries.length - 1 &&
+                (selected ||
+                  !!definitions[id]?.keepActive ||
+                  !!getScreenOptions(entry).keepActive))
+            }
+          />
+        </View>
+      ))
+    }
     const CustomStack = config.renderStack
     if (CustomStack) {
       const entries = state.stacks[id]!
@@ -775,6 +804,30 @@ function NavigationSurface({
     navigation.getSnapshot,
   )
   const [error, setError] = React.useState<unknown>()
+  React.useEffect(() => {
+    let cancelled = false
+    const initialize = async () => {
+      if (!navigation.getActiveEntry(state)) {
+        return
+      }
+      for (const [id, container] of Object.entries(config.containers)) {
+        if (cancelled) {
+          return
+        }
+        if (
+          container.keepActive &&
+          !state.stacks[id]?.length &&
+          !navigation.getChildren(id).length
+        ) {
+          await navigation.initialize(id)
+        }
+      }
+    }
+    void initialize().catch(setError)
+    return () => {
+      cancelled = true
+    }
+  }, [config, navigation, state])
   if (error) {
     throw error
   }
