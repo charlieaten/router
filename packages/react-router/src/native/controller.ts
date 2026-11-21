@@ -1,6 +1,6 @@
 import { createMemoryHistory } from '@tanstack/history'
 import { Linking } from 'react-native'
-import { getUrlScheme, isRedirect } from '@tanstack/router-core'
+import { deepEqual, getUrlScheme, isRedirect } from '@tanstack/router-core'
 import { createNavigation } from '@tanstack/router-core/navigation'
 import {
   createRouteTreeSource,
@@ -43,6 +43,10 @@ export interface NativeNavigationOptions {
 }
 
 export interface NativeNavigationContainer extends NavigationContainer {
+  /** Registered route path describing this branch, independent of its current visit. */
+  routePath?: string
+  /** Render an unfocused branch for pagers; focus still follows selection. */
+  keepActive?: boolean
   tab?: Pick<
     React.ComponentProps<typeof Tabs.Screen>,
     | 'ios'
@@ -195,18 +199,48 @@ export function attachNativeNavigation(router: AnyRouter) {
       if (!definition) {
         return undefined
       }
+      const canonical = (href: string) =>
+        router.buildLocation({
+          href,
+          _includeValidateSearch: true,
+        } as never).href
+      const containers = Object.fromEntries(
+        Object.entries(definition.containers).map(([id, container]) => [
+          id,
+          {
+            ...container,
+            initialHref:
+              container.initialHref && canonical(container.initialHref),
+          },
+        ]),
+      )
       const pathname = entry.href.split(/[?#]/)[0]!
-      const target = Object.entries(definition.containers).find(
-        ([, container]) => {
-          const base = container.initialHref?.split(/[?#]/)[0]
-          return base && (pathname === base || pathname.startsWith(base + '/'))
-        },
-      )?.[0]
+      let target: string | undefined
+      let length = 0
+      // A slash-root stack is the fallback; prefer a more specific branch.
+      for (const [id, container] of Object.entries(containers)) {
+        const path = container.initialHref?.split(/[?#]/)[0]
+        const base = path === '/' ? path : path?.replace(/\/$/, '')
+        if (
+          base &&
+          base.length > length &&
+          (base === '/' || pathname === base || pathname.startsWith(base + '/'))
+        ) {
+          target = id
+          length = base.length
+        }
+      }
       return {
         ...definition,
-        initialLocation:
-          definition.initialLocation ??
-          (target ? { href: entry.href, target } : undefined),
+        containers,
+        initialLocation: definition.initialLocation
+          ? {
+              ...definition.initialLocation,
+              href: canonical(definition.initialLocation.href),
+            }
+          : target
+            ? { href: canonical(entry.href), target }
+            : undefined,
       }
     },
     async prepare(entry, signal) {
@@ -320,7 +354,10 @@ export function attachNativeNavigation(router: AnyRouter) {
     },
   })
   const initialize = navigation.initialize
-  navigation.initialize = async () => {
+  navigation.initialize = async (target) => {
+    if (target !== undefined) {
+      return initialize(target)
+    }
     try {
       return await initialize()
     } catch (error) {
@@ -497,8 +534,10 @@ export function attachNativeNavigation(router: AnyRouter) {
                 blocker.blockerFn({
                   currentLocation: entry.value.history.location,
                   nextLocation:
-                    navigation.getActiveEntry(change.next)?.value.history
-                      .location ?? entry.value.history.location,
+                    (
+                      change.destination ??
+                      navigation.getActiveEntry(change.next)
+                    )?.value.history.location ?? entry.value.history.location,
                   action: change.action === 'back' ? 'BACK' : 'REPLACE',
                 }),
               ),
@@ -557,6 +596,275 @@ export async function navigateNative(router: AnyRouter, options: unknown) {
   }
   throw new Error('Too many native navigation redirects')
 }
+// Route ancestry identifies a branch; bound path params identify its owner visit.
+function destinationMatch(
+  router: AnyRouter,
+  match: AnyRouteMatch,
+  destination: Array<AnyRouteMatch>,
+) {
+  const next = destination.find(
+    (candidate) => candidate.routeId === match.routeId,
+  )
+  if (!next) {
+    return undefined
+  }
+  const path: string = router.routesById[match.routeId]!.fullPath
+  const names = Array.from(
+    path.matchAll(/\$([A-Za-z0-9_]+)/g),
+    (item) => item[1]!,
+  )
+  if (path.endsWith('/$')) {
+    names.push('_splat')
+  }
+  return names.every((name) => deepEqual(match.params[name], next.params[name]))
+    ? next
+    : undefined
+}
+
+function ownerDestination(
+  router: AnyRouter,
+  origin: NativeNavigation,
+  location: ParsedLocation,
+  options: unknown,
+) {
+  const root = rootRouters.get(router) ?? router
+  const intent = options as NavigateOptionExtensions & {
+    search?: unknown
+    href?: string
+    to?: string
+    state?: unknown
+  }
+  const destination = root.matchRoutes(location)
+  const route =
+    root.routesByPath[intent.to ?? ''] ??
+    root.routesByPath[location.pathname] ??
+    root.routesById[destination.at(-1)!.routeId]!
+  // An explicit layout path restores its navigator; a trailing slash targets index.
+  const requested =
+    !(intent.to ?? intent.href?.split(/[?#]/)[0] ?? location.pathname).endsWith(
+      '/',
+    ) &&
+    route.path === '/' &&
+    destination
+      .find((match) => match.routeId === route.parentRoute?.id)
+      ?.pathname.replace(/\/$/, '') === location.pathname.replace(/\/$/, '')
+      ? route.parentRoute
+      : route
+  const anchors = new Map<
+    NativeNavigation,
+    { key: string; container: string }
+  >()
+  let branch: NativeNavigation | undefined = origin
+  let anchor = entryOwners.get(
+    roots.has(router) ? (origin.getActiveEntry()?.value ?? router) : router,
+  )
+  while (branch) {
+    if (anchor) {
+      anchors.set(branch, anchor)
+    }
+    const owner = branch.getOwner()
+    anchor = owner?.entry
+    branch = owner?.navigation
+  }
+  const accepts = (entry: NativeEntry) =>
+    entry.value.state.matches.every(
+      (match, index) =>
+        match.status === 'success' && match.id === destination[index]?.id,
+    )
+  let navigation = origin
+  while (navigation.getOwner()) {
+    const owner = navigation.getOwner()!
+    const boundary = owner.entry.value.state.matches.at(-1)!
+    if (
+      boundary.routeId !== requested.id &&
+      destinationMatch(root, boundary, destination) &&
+      accepts(owner.entry)
+    ) {
+      break
+    }
+    navigation = owner.navigation
+  }
+  // An explicit oldest search from the root may choose an older owner. Scoped
+  // callers remain anchored to their own visit even when another copy is active.
+  if (
+    roots.has(router) &&
+    intent.stackMatch === 'oldest' &&
+    intent.stackBehavior === 'reuse'
+  ) {
+    navigation = getNativeNavigation(root)
+  }
+  let handled = !!navigation.getOwner()
+  let activating = false
+  const resolve: Parameters<NativeNavigation['activate']>[0] = (node) => {
+    const owner = node.getOwner()
+    const config = owner
+      ? getEntryNavigatorOptions(owner.entry)!
+      : root.options.native!
+    const state = node.getSnapshot()
+    const here = anchors.get(node)
+    const target = here?.container ?? node.getFocusedContainer()
+    const parentId =
+      owner?.entry.value.state.matches.at(-1)!.routeId ?? root.routeTree.id
+    if (config.rootKind === 'tabs' || config.rootKind === 'drawer') {
+      let selected:
+        | { id: string; match: AnyRouteMatch; rank: number }
+        | undefined
+      for (const [id, container] of Object.entries(config.containers)) {
+        const href = container.routePath ?? container.initialHref
+        if (!href || container.overlay) {
+          continue
+        }
+        const matches = root.matchRoutes(root.buildLocation({ href } as never))
+        const suffix = matches.slice(
+          matches.findIndex((match) => match.routeId === parentId) + 1,
+        )
+        const declared = root.routesByPath[href.split(/[?#]/)[0]!]
+        const boundary =
+          suffix.find(
+            (match) =>
+              root.routesById[match.routeId]?.options.staticData?.native
+                ?.navigator,
+          ) ??
+          suffix.find((match) => match.routeId === declared?.id) ??
+          suffix.at(-1)
+        const match = boundary && destinationMatch(root, boundary, destination)
+        const rank = match ? destination.indexOf(match) : -1
+        if (match && (!selected || rank > selected.rank)) {
+          selected = { id, match, rank }
+        }
+      }
+      if (selected) {
+        handled = true
+        activating = true
+        const stack = state.stacks[selected.id] ?? []
+        const entry =
+          [...stack]
+            .reverse()
+            .find(
+              (entry) =>
+                entry.navigator &&
+                destinationMatch(
+                  root,
+                  entry.value.state.matches.at(-1)!,
+                  destination,
+                ),
+            ) ?? stack.at(-1)
+        const boundary = entry?.value.state.matches.at(-1)
+        const reload = !!entry?.navigator && !accepts(entry)
+        const sameOwner =
+          entry?.navigator &&
+          boundary &&
+          boundary.routeId === requested.id &&
+          destinationMatch(root, boundary, destination)
+        const explicitSearch =
+          Object.hasOwn(intent, 'search') || !!intent.href?.includes('?')
+        const updateOwner =
+          sameOwner &&
+          (explicitSearch || intent.state !== undefined) &&
+          (entry.value.state.location.searchStr !== location.searchStr ||
+            intent.state !== undefined)
+        return {
+          target: selected.id,
+          key: entry?.key,
+          descend:
+            !reload && !sameOwner && requested.id !== selected.match.routeId,
+          request:
+            sameOwner && !updateOwner && !reload
+              ? undefined
+              : {
+                  href: location.href,
+                  identity: entry?.identity,
+                  state:
+                    intent.state === undefined
+                      ? undefined
+                      : { ...location.state },
+                  behavior: entry ? 'reuse' : 'replace',
+                  match: intent.stackMatch,
+                },
+        }
+      }
+    }
+    const stack = state.stacks[target] ?? []
+    const anchorIndex = here
+      ? stack.findIndex((entry) => entry.key === here.key)
+      : stack.length - 1
+    const candidates = stack.slice(0, anchorIndex + 1)
+    if (intent.stackMatch !== 'oldest') {
+      candidates.reverse()
+    }
+    const existing = candidates.find(
+      (entry) =>
+        entry.navigator &&
+        destinationMatch(root, entry.value.state.matches.at(-1)!, destination),
+    )
+    if (existing) {
+      handled = true
+      activating = true
+      const reload = !accepts(existing)
+      const sameOwner =
+        requested.id === existing.value.state.matches.at(-1)!.routeId
+      const explicitSearch =
+        Object.hasOwn(intent, 'search') || !!intent.href?.includes('?')
+      const updateOwner =
+        sameOwner &&
+        (explicitSearch || intent.state !== undefined) &&
+        (existing.value.state.location.searchStr !== location.searchStr ||
+          intent.state !== undefined)
+      return {
+        target,
+        key: existing.key,
+        descend: !sameOwner && !reload,
+        request:
+          updateOwner || reload
+            ? {
+                href: location.href,
+                identity: existing.identity,
+                behavior: 'reuse',
+                state:
+                  intent.state === undefined
+                    ? undefined
+                    : { ...location.state },
+              }
+            : undefined,
+      }
+    }
+    const reuse =
+      activating ||
+      intent.stackBehavior === 'reuse' ||
+      (owner &&
+        config.containers[target]?.initialHref
+          ?.split(/[?#]/)[0]
+          ?.replace(/\/$/, '') === location.pathname.replace(/\/$/, ''))
+    const matching =
+      reuse &&
+      candidates.find((entry) => {
+        const match = entry.value.state.matches.at(-1)!
+        return (
+          match.routeId === destination.at(-1)!.routeId &&
+          destinationMatch(root, match, destination)
+        )
+      })
+    return {
+      target,
+      request: {
+        href: location.href,
+        identity: matching ? matching.identity : undefined,
+        state: intent.state === undefined ? undefined : { ...location.state },
+        behavior: reuse ? 'reuse' : 'push',
+        match: intent.stackMatch,
+      },
+    }
+  }
+  const first = resolve(navigation)
+  return handled
+    ? {
+        navigation,
+        resolve: (node: NativeNavigation) =>
+          node === navigation ? first : resolve(node),
+      }
+    : undefined
+}
+
 async function navigateNativeOnce(router: AnyRouter, options: unknown) {
   if (scopes.get(router)?.isDisposed) {
     return
@@ -591,6 +899,20 @@ async function navigateNativeOnce(router: AnyRouter, options: unknown) {
     ...(options as object),
     _includeValidateSearch: true,
   } as never)
+  if (
+    !intent.target &&
+    !intent.entryId &&
+    !(intent as { replace?: boolean }).replace &&
+    (!intent.stackBehavior || intent.stackBehavior === 'reuse')
+  ) {
+    const destination = ownerDestination(router, navigation, location, options)
+    if (destination) {
+      await destination.navigation.activate(destination.resolve, {
+        ignoreBlocker: raw.ignoreBlocker,
+      })
+      return
+    }
+  }
   if (intent.target) {
     while (
       !navigation.getSnapshot().stacks[intent.target] &&

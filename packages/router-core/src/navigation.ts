@@ -37,9 +37,30 @@ export interface NavigationRequest {
   match?: 'nearest' | 'oldest'
   ignoreBlocker?: boolean
 }
+export interface NavigationActivation {
+  target?: string
+  key?: string
+  descend?: boolean
+  request?: NavigationRequest
+}
+
+type ActivationResolver<T> = (navigation: Navigation<T>) => NavigationActivation
+interface NavigationHost<T> {
+  commit: (state: NavigationSnapshot<T>) => void
+  publish: (change: NavigationChange<T>) => void
+  plan: (
+    instruction: NavigationActivation,
+    resolve: ActivationResolver<T>,
+    signal: AbortSignal,
+    created: Array<NavigationEntry<T>>,
+    staged: Map<Navigation<T>, NavigationSnapshot<T>>,
+  ) => Promise<void>
+}
+
 export interface NavigationChange<T> {
   historyAction: HistoryAction
   action: 'navigate' | 'back' | 'select' | 'reset' | 'restore' | 'drawer'
+  destination?: NavigationEntry<T>
   current: NavigationSnapshot<T>
   next: NavigationSnapshot<T>
   updated: Array<{ entry: NavigationEntry<T>; previous?: NavigationEntry<T> }>
@@ -81,6 +102,7 @@ export interface PopToRequest {
 }
 
 interface Coordinator<T> {
+  hosts: Map<Navigation<T>, NavigationHost<T>>
   owner?: AbortController
   events: Set<(navigation: Navigation<T>, change: NavigationChange<T>) => void>
   blockers: Map<
@@ -109,6 +131,7 @@ export function createNavigation<T>(
   options: NavigationOptions<T>,
 ): Navigation<T> {
   return createNavigator(options, {
+    hosts: new Map(),
     events: new Set(),
     blockers: new Map(),
     sequence: 0,
@@ -357,14 +380,165 @@ function createNavigator<T>(
       register(child, entry.navigator!)
     }
   }
+  async function planNavigate(
+    request: NavigationRequest,
+    initial: NavigationSnapshot<T>,
+    signal: AbortSignal,
+    created: Array<NavigationEntry<T>>,
+  ) {
+    const target = leaf(
+      request.target ?? top(initial)?.container ?? initial.selected,
+      initial,
+    )
+    getContainer(target)
+    let state = initial
+    const stack = state.stacks[target]!
+    const identity = request.identity ?? identityOf(request.href)
+    const behavior = request.behavior ?? 'push'
+    if (behavior === 'reuse') {
+      let found = -1
+      for (let index = 0; index < stack.length; index++) {
+        if (stack[index]!.identity === identity) {
+          found = index
+          if (request.match === 'oldest') {
+            break
+          }
+        }
+      }
+      if (found >= 0) {
+        const entry = stack[found]!
+        const replacement =
+          entry.href === request.href && request.state === undefined
+            ? entry
+            : await prepare(
+                request.href,
+                target,
+                identity,
+                signal,
+                created,
+                request.state ?? entry.state,
+                undefined,
+                entry,
+              )
+        replacement.key = entry.key
+        return focus(
+          {
+            ...state,
+            stacks: {
+              ...state.stacks,
+              [target]: [...stack.slice(0, found), replacement],
+            },
+          },
+          target,
+        )
+      }
+    }
+    if (
+      !stack.length &&
+      !getContainer(rootOf(target)).overlay &&
+      request.href !== getContainer(target).initialHref
+    ) {
+      state = await ensure(state, target, signal, created)
+      return planNavigate(request, state, signal, created)
+    }
+    const entry = await prepare(
+      request.href,
+      target,
+      identity,
+      signal,
+      created,
+      request.state,
+    )
+    return focus(
+      {
+        ...state,
+        stacks: {
+          ...state.stacks,
+          [target]: [
+            ...(behavior === 'replace' ? stack.slice(0, -1) : stack),
+            entry,
+          ],
+        },
+      },
+      target,
+    )
+  }
+
+  async function planActivation(
+    instruction: NavigationActivation,
+    resolve: ActivationResolver<T>,
+    signal: AbortSignal,
+    created: Array<NavigationEntry<T>>,
+    staged: Map<Navigation<T>, NavigationSnapshot<T>>,
+  ) {
+    if (signal.aborted) {
+      return
+    }
+    const target = leaf(instruction.target ?? snapshot.selected, snapshot)
+    let next = snapshot
+    if (instruction.key) {
+      const stack = next.stacks[target]!
+      const index = stack.findIndex((entry) => entry.key === instruction.key)
+      if (index < 0) {
+        throw new Error('Navigation owner is no longer attached')
+      }
+      if (index < stack.length - 1) {
+        next = {
+          ...next,
+          stacks: { ...next.stacks, [target]: stack.slice(0, index + 1) },
+        }
+      }
+    }
+    if (!getContainer(rootOf(target)).overlay && next.overlays.length) {
+      const overlays = next.overlays
+      next = retireContainers(
+        { ...next, overlays: [] },
+        ids.filter((id) => overlays.includes(rootOf(id))),
+      )
+    }
+    if (instruction.descend) {
+      next = await ensure(next, target, signal, created)
+      if (signal.aborted) {
+        return
+      }
+      const child = next.stacks[target]!.at(-1)?.navigator
+      if (child) {
+        await coordinator.hosts
+          .get(child)!
+          .plan(resolve(child), resolve, signal, created, staged)
+      } else if (instruction.request) {
+        next = await planNavigate(
+          { ...instruction.request, target },
+          next,
+          signal,
+          created,
+        )
+      }
+    } else if (instruction.request) {
+      next = await planNavigate(
+        { ...instruction.request, target },
+        next,
+        signal,
+        created,
+      )
+    } else {
+      next = await ensure(next, target, signal, created)
+    }
+    staged.set(api, focus(next, target))
+  }
+
   async function transact(
     action: NavigationChange<T>['action'],
     plan: (
       signal: AbortSignal,
       created: Array<NavigationEntry<T>>,
-    ) => Promise<NavigationSnapshot<T>>,
+    ) => Promise<
+      NavigationSnapshot<T> | Map<Navigation<T>, NavigationSnapshot<T>>
+    >,
     ignoreBlocker = false,
-    historyAction: HistoryAction = action === 'back' ? 'BACK' : 'REPLACE',
+    historyAction: HistoryAction | (() => HistoryAction) = action === 'back'
+      ? 'BACK'
+      : 'REPLACE',
   ): Promise<boolean> {
     if (disposed || (parent && !live())) {
       return false
@@ -379,109 +553,179 @@ function createNavigator<T>(
       if (transaction.signal.aborted) {
         return false
       }
-      const next = await plan(transaction.signal, created)
+      const planned = await plan(transaction.signal, created)
       if (transaction.signal.aborted) {
         return false
       }
-      const current = snapshot
-      // Only changed stacks participate. Switching a tab never scans unrelated visits.
-      const changed = ids.filter((id) => current.stacks[id] !== next.stacks[id])
-      const remaining = new Map(
-        changed
-          .flatMap((id) => next.stacks[id]!)
-          .map((entry) => [entry.key, entry]),
-      )
-      const previousEntries = changed.flatMap((id) => current.stacks[id]!)
-      const removed = previousEntries.filter(
-        (entry) => !remaining.has(entry.key),
-      )
-      const previousByKey = new Map(
-        previousEntries.map((entry) => [entry.key, entry]),
-      )
-      const updated = Array.from(remaining.values()).flatMap((entry) => {
-        const previous = previousByKey.get(entry.key)
-        return previous?.value === entry.value ? [] : [{ entry, previous }]
+      const staged =
+        planned instanceof Map ? planned : new Map([[api, planned]])
+      const changes = Array.from(staged, ([navigation, next]) => {
+        const current = navigation.getSnapshot()
+        const changed = Object.keys(current.stacks).filter(
+          (id) => current.stacks[id] !== next.stacks[id],
+        )
+        const remaining = new Map(
+          changed
+            .flatMap((id) => next.stacks[id]!)
+            .map((entry) => [entry.key, entry]),
+        )
+        const previousEntries = changed.flatMap((id) => current.stacks[id]!)
+        const previousByKey = new Map(
+          previousEntries.map((entry) => [entry.key, entry]),
+        )
+        const change: NavigationChange<T> = {
+          action,
+          historyAction:
+            typeof historyAction === 'function'
+              ? historyAction()
+              : historyAction,
+          current,
+          next,
+          signal: transaction.signal,
+          removed: previousEntries.filter((entry) => !remaining.has(entry.key)),
+          updated: Array.from(remaining.values()).flatMap((entry) => {
+            const previous = previousByKey.get(entry.key)
+            return previous?.value === entry.value ? [] : [{ entry, previous }]
+          }),
+        }
+        return {
+          navigation,
+          host: coordinator.hosts.get(navigation)!,
+          remaining,
+          previousEntries,
+          change,
+        }
       })
-      const change: NavigationChange<T> = {
-        action,
-        historyAction,
-        current,
-        next,
-        removed,
-        updated,
-        signal: transaction.signal,
+      if (planned instanceof Map) {
+        let root: Navigation<T> = api
+        while (root.getOwner() && staged.has(root.getOwner()!.navigation)) {
+          root = root.getOwner()!.navigation
+        }
+        let destination: NavigationEntry<T> | undefined
+        let branch: Navigation<T> | undefined = root
+        while (branch) {
+          const state: NavigationSnapshot<T> =
+            staged.get(branch) ?? branch.getSnapshot()
+          let target = state.overlays.at(-1) ?? state.selected
+          while (state.selectedChildren[target]) {
+            target = state.selectedChildren[target]!
+          }
+          destination = state.stacks[target]?.at(-1)
+          branch = destination?.navigator
+        }
+        for (const { change } of changes) {
+          change.destination = destination
+        }
       }
       if (!ignoreBlocker && blockers.size) {
-        const nextKeys = new Set(
-          Array.from(remaining.values())
+        const checked = new Set<string>()
+        const retained = (
+          entry: NavigationEntry<T>,
+        ): Array<NavigationEntry<T>> => [
+          entry,
+          ...Object.values(
+            entry.navigator
+              ? (staged.get(entry.navigator) ?? entry.navigator.getSnapshot())
+                  .stacks
+              : {},
+          )
+            .flat()
+            .flatMap(retained),
+        ]
+        for (const { remaining, previousEntries, change } of changes) {
+          const nextKeys = new Set(
+            Array.from(remaining.values())
+              .flatMap(retained)
+              .map((entry) => entry.key),
+          )
+          for (const entry of previousEntries
             .flatMap(descendants)
-            .map((entry) => entry.key),
-        )
-        for (const entry of previousEntries
-          .flatMap(descendants)
-          .filter((entry) => !nextKeys.has(entry.key))) {
-          for (const block of blockers.get(entry.key) ?? []) {
-            let abort!: () => void
-            const cancelled = new Promise<boolean>((resolve) => {
-              abort = () => resolve(true)
-              transaction.signal.addEventListener('abort', abort, {
-                once: true,
+            .filter((entry) => !nextKeys.has(entry.key))) {
+            if (checked.has(entry.key)) {
+              continue
+            }
+            checked.add(entry.key)
+            for (const block of blockers.get(entry.key) ?? []) {
+              let abort!: () => void
+              const cancelled = new Promise<boolean>((resolve) => {
+                abort = () => resolve(true)
+                transaction.signal.addEventListener('abort', abort, {
+                  once: true,
+                })
               })
-            })
-            try {
-              if (await Promise.race([block(change), cancelled])) {
+              try {
+                if (await Promise.race([block(change), cancelled])) {
+                  return false
+                }
+              } finally {
+                transaction.signal.removeEventListener('abort', abort)
+              }
+              if (transaction.signal.aborted) {
                 return false
               }
-            } finally {
-              transaction.signal.removeEventListener('abort', abort)
-            }
-            if (transaction.signal.aborted) {
-              return false
             }
           }
         }
       }
-      committed = new Set(remaining.values())
-      snapshot = next
-      if (options.getNavigator || blockers.size) {
-        for (const entry of remaining.values()) {
-          register(entry, api)
+      committed = new Set(
+        changes.flatMap(({ remaining }) => Array.from(remaining.values())),
+      )
+      // Publish every snapshot before notifying observers or activating route lifecycle.
+      for (const { navigation, host, change, remaining } of changes) {
+        host.commit(change.next)
+        if (options.getNavigator || blockers.size) {
+          for (const entry of remaining.values()) {
+            register(entry, navigation)
+          }
         }
       }
-      for (const listener of listeners) {
-        notify(listener)
+      for (const { host, change } of changes) {
+        host.publish(change)
       }
-      for (const listener of events) {
-        notify(() => listener(change))
+      const touched = new Set(staged.keys())
+      for (const { navigation } of changes) {
+        let ancestor = navigation.getOwner()
+        while (ancestor) {
+          if (!touched.has(ancestor.navigation)) {
+            touched.add(ancestor.navigation)
+            coordinator.touches.get(ancestor.navigation)?.()
+          }
+          ancestor = ancestor.navigation.getOwner()
+        }
       }
-      let ancestor = parent
-      while (ancestor) {
-        coordinator.touches.get(ancestor.navigation)?.()
-        ancestor = ancestor.navigation.getOwner()
-      }
+      const change = changes.find((item) => item.navigation === api)!.change
+      const updated = new Map(
+        changes
+          .flatMap(({ change }) => change.updated)
+          .flatMap(({ entry, previous }) => [
+            { entry, previous },
+            ...(entry.navigator?.getEntries().map((child) => ({
+              entry: child,
+              previous: previous?.navigator
+                ?.getEntries()
+                .find((old) => old.key === child.key),
+            })) ?? []),
+          ])
+          .map((item) => [item.entry.key, item]),
+      )
       for (const listener of coordinator.events) {
         notify(() =>
           listener(api, {
             ...change,
-            updated: change.updated.flatMap(({ entry, previous }) => [
-              { entry, previous },
-              ...(entry.navigator?.getEntries().map((child) => ({
-                entry: child,
-                previous: previous?.navigator
-                  ?.getEntries()
-                  .find((old) => old.key === child.key),
-              })) ?? []),
-            ]),
+            updated: Array.from(updated.values()),
+            removed: changes.flatMap(({ change }) => change.removed),
           }),
         )
       }
-      for (const entry of removed) {
-        release(entry)
-      }
-      for (const entry of previousEntries) {
-        const replacement = remaining.get(entry.key)
-        if (replacement && replacement.value !== entry.value) {
+      for (const { previousEntries, remaining, change } of changes) {
+        for (const entry of change.removed) {
           release(entry)
+        }
+        for (const entry of previousEntries) {
+          const replacement = remaining.get(entry.key)
+          if (replacement && replacement.value !== entry.value) {
+            release(entry)
+          }
         }
       }
       return true
@@ -893,7 +1137,13 @@ function createNavigator<T>(
         events.delete(listener)
       }
     },
-    async initialize(): Promise<boolean> {
+    async initialize(target?: string): Promise<boolean> {
+      if (target !== undefined) {
+        getContainer(target)
+        return transact('select', (signal, created) =>
+          ensure(snapshot, target, signal, created),
+        )
+      }
       return top()
         ? true
         : options.initialLocation
@@ -903,90 +1153,57 @@ function createNavigator<T>(
     navigate(request: NavigationRequest): Promise<boolean> {
       return transact(
         'navigate',
-        async (signal, created) => {
-          const target = leaf(
-            request.target ?? top()?.container ?? snapshot.selected,
-            snapshot,
-          )
-          getContainer(target)
-          let state = snapshot
-          let stack = state.stacks[target]!
-          const identity = request.identity ?? identityOf(request.href)
-          const behavior = request.behavior ?? 'push'
-          if (behavior === 'reuse') {
-            let found = -1
-            for (let index = 0; index < stack.length; index++) {
-              if (stack[index]!.identity === identity) {
-                found = index
-                if (request.match === 'oldest') {
-                  break
-                }
-              }
-            }
-            if (found >= 0) {
-              const entry = stack[found]!
-              const replacement =
-                entry.href === request.href && request.state === undefined
-                  ? entry
-                  : await prepare(
-                      request.href,
-                      target,
-                      identity,
-                      signal,
-                      created,
-                      request.state ?? entry.state,
-                      undefined,
-                      entry,
-                    )
-              replacement.key = entry.key
-              return focus(
-                {
-                  ...state,
-                  stacks: {
-                    ...state.stacks,
-                    [target]: [...stack.slice(0, found), replacement],
-                  },
-                },
-                target,
-              )
-            }
-          }
-          if (
-            !stack.length &&
-            !getContainer(rootOf(target)).overlay &&
-            request.href !== getContainer(target).initialHref
-          ) {
-            state = await ensure(state, target, signal, created)
-            stack = state.stacks[target]!
-          }
-          const entry = await prepare(
-            request.href,
-            target,
-            identity,
-            signal,
-            created,
-            request.state,
-          )
-          return focus(
-            {
-              ...state,
-              stacks: {
-                ...state.stacks,
-                [target]: [
-                  ...(behavior === 'replace' ? stack.slice(0, -1) : stack),
-                  entry,
-                ],
-              },
-            },
-            target,
-          )
-        },
+        (signal, created) => planNavigate(request, snapshot, signal, created),
         request.ignoreBlocker,
         request.behavior === 'replace'
           ? 'REPLACE'
           : request.behavior === 'reuse'
             ? 'BACK'
             : 'PUSH',
+      )
+    },
+    activate(resolve, { ignoreBlocker = false } = {}) {
+      let historyAction: HistoryAction = 'BACK'
+      const destination = (navigation: Navigation<T>) => {
+        const instruction = resolve(navigation)
+        if (instruction.request) {
+          historyAction =
+            instruction.request.behavior === 'replace'
+              ? 'REPLACE'
+              : instruction.request.behavior === 'reuse'
+                ? 'BACK'
+                : 'PUSH'
+        }
+        return instruction
+      }
+      return transact(
+        'navigate',
+        async (signal, created) => {
+          const staged = new Map<Navigation<T>, NavigationSnapshot<T>>()
+          await planActivation(
+            destination(api),
+            destination,
+            signal,
+            created,
+            staged,
+          )
+          let owner = parent
+          while (owner && !signal.aborted) {
+            await coordinator.hosts
+              .get(owner.navigation)!
+              .plan(
+                { target: owner.entry.container, key: owner.entry.key },
+                resolve,
+                signal,
+                created,
+                staged,
+              )
+            owner = owner.navigation.getOwner()
+          }
+          return staged
+        },
+        ignoreBlocker,
+        () => historyAction,
       )
     },
     select(target: string): Promise<boolean> {
@@ -1308,6 +1525,7 @@ function createNavigator<T>(
         coordinator.blockedAncestors.clear()
       }
       events.clear()
+      coordinator.hosts.delete(api)
       coordinator.touches.delete(api)
       for (const listener of treeListeners) {
         coordinator.events.delete(listener)
@@ -1346,6 +1564,20 @@ function createNavigator<T>(
       }
     }
   }
+  coordinator.hosts.set(api, {
+    commit(next) {
+      snapshot = next
+    },
+    publish(change) {
+      for (const listener of listeners) {
+        notify(listener)
+      }
+      for (const listener of events) {
+        notify(() => listener(change))
+      }
+    },
+    plan: planActivation,
+  })
   coordinator.touches.set(api, () => {
     snapshot = { ...snapshot }
     for (const listener of listeners) {
@@ -1500,8 +1732,14 @@ export interface Navigation<T> {
   onTreeChange: (
     listener: (navigation: Navigation<T>, change: NavigationChange<T>) => void,
   ) => () => void
-  initialize: () => Promise<boolean>
+  /** Initialize an optional branch without selecting it. */
+  initialize: (target?: string) => Promise<boolean>
   navigate: (request: NavigationRequest) => Promise<boolean>
+  /** Atomically activate a visit-owned destination and its owning ancestors. */
+  activate: (
+    resolve: ActivationResolver<T>,
+    options?: { ignoreBlocker?: boolean },
+  ) => Promise<boolean>
   select: (target: string) => Promise<boolean>
   canGoBack: (options?: { target?: string; bubble?: boolean }) => boolean
   back: (options?: {

@@ -1606,3 +1606,807 @@ it.each([
     expect(screen.getByText('Body count a: 1')).toBeTruthy()
   },
 )
+
+it('renders plain tab visits without implicit native stack screens and retains their state', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const first = createRoute({
+    getParentRoute: () => root,
+    path: '/first',
+    staticData: { native: { keepActive: true } },
+    component: function TabDraft() {
+      const [value, setValue] = React.useState('')
+      return (
+        <input
+          aria-label="Tab draft"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+        />
+      )
+    },
+  })
+  const second = createRoute({
+    getParentRoute: () => root,
+    path: '/second',
+    component: () => <p>Second direct tab</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([first, second]),
+    native: {
+      rootKind: 'tabs',
+      initialContainer: 'first',
+      containers: {
+        first: { initialHref: '/first' },
+        second: { initialHref: '/second' },
+      },
+    },
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  fireEvent.change(await screen.findByLabelText('Tab draft'), {
+    target: { value: 'Retained draft' },
+  })
+  expect(screen.queryByTestId('native-back')).toBeNull()
+  await act(() => navigation.select('second'))
+  await screen.findByText('Second direct tab')
+  await act(() => navigation.select('first'))
+  expect(
+    (await screen.findByLabelText('Tab draft')).getAttribute('value'),
+  ).toBe('Retained draft')
+  expect(screen.queryByTestId('native-back')).toBeNull()
+  router.history.destroy()
+})
+
+it('composes direct tabs with an explicit child stack and keeps duplicate owners independent', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const start = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <p>Start</p>,
+  })
+  const saved = createRoute({
+    getParentRoute: () => root,
+    path: '/saved',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          rootKind: 'tabs',
+          initialContainer: 'archive',
+          containers: {
+            archive: { initialHref: '/saved/archive' },
+            buds: { initialHref: '/saved/buds' },
+          },
+        },
+      },
+    },
+  })
+  const archive = createRoute({
+    getParentRoute: () => saved,
+    path: '/archive',
+    component: () => <p>Archive direct</p>,
+  })
+  const buds = createRoute({
+    getParentRoute: () => saved,
+    path: '/buds',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          rootKind: 'custom',
+          initialContainer: 'main',
+          containers: { main: { initialHref: '/saved/buds', kind: 'stack' } },
+          renderContainer: ({ children, selected }) =>
+            children.find((item) => item.key === selected)?.content,
+          renderStack: ({ children }) => (
+            <section aria-label="Explicit buds stack">
+              {children.map((item) => (
+                <React.Fragment key={item.key}>
+                  {item.wrap?.(
+                    <>
+                      <h2>Buds visit</h2>
+                      {item.content}
+                    </>,
+                  )}
+                </React.Fragment>
+              ))}
+            </section>
+          ),
+        },
+      },
+    },
+  })
+  const budsIndex = createRoute({
+    getParentRoute: () => buds,
+    path: '/',
+    component: () => <p>Buds home</p>,
+  })
+  const user = createRoute({
+    getParentRoute: () => buds,
+    path: '/users/$id',
+    component: function BudsUser() {
+      const { id } = useParams({ strict: false })
+      return <p>Buds user {id}</p>
+    },
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([
+      start,
+      saved.addChildren([archive, buds.addChildren([budsIndex, user])]),
+    ]),
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Start')
+  await act(() => navigation.navigate({ href: '/saved' }))
+  const first = navigation.getSnapshot().stacks.main!.at(-1)!
+  const tabs = first.navigator!
+  await screen.findByText('Archive direct')
+  await act(() => tabs.select('buds'))
+  await screen.findByText('Buds home')
+  const stack = tabs.getSnapshot().stacks.buds![0]!.navigator!
+  await act(() => stack.navigate({ href: '/saved/buds/users/a' }))
+  await screen.findByText('Buds user a')
+  await act(() => tabs.select('archive'))
+  await screen.findByText('Archive direct')
+  await act(() => tabs.select('buds'))
+  await screen.findByText('Buds user a')
+  await act(() => navigation.navigate({ href: '/saved', target: 'main' }))
+  const second = navigation.getSnapshot().stacks.main!.at(-1)!
+  expect(second.navigator).not.toBe(tabs)
+  expect(second.navigator!.getFocusedContainer()).toBe('archive')
+  await act(() => navigation.back({ target: 'main' }))
+  expect(navigation.getSnapshot().stacks.main!.at(-1)).toBe(first)
+  expect(tabs.getFocusedContainer()).toBe('buds')
+  await screen.findByText('Buds user a')
+  await act(() => stack.back({ target: 'main' }))
+  await screen.findByText('Buds home')
+  router.history.destroy()
+})
+
+it('retains React state across low-level history changes in a direct tab branch', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const page = createRoute({
+    getParentRoute: () => root,
+    path: '/page',
+    component: function DraftPage() {
+      const [value, setValue] = React.useState('')
+      return (
+        <input
+          aria-label="Direct history draft"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+        />
+      )
+    },
+  })
+  const other = createRoute({
+    getParentRoute: () => root,
+    path: '/other',
+    component: () => <p>Direct replacement</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([page, other]),
+    native: {
+      rootKind: 'tabs',
+      initialContainer: 'main',
+      containers: { main: { initialHref: '/page' } },
+    },
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  fireEvent.change(await screen.findByLabelText('Direct history draft'), {
+    target: { value: 'Keep this' },
+  })
+  await act(() => navigation.navigate({ href: '/other', target: 'main' }))
+  await screen.findByText('Direct replacement')
+  await act(() => navigation.back({ target: 'main' }))
+  expect(
+    (await screen.findByLabelText('Direct history draft')).getAttribute(
+      'value',
+    ),
+  ).toBe('Keep this')
+  router.history.destroy()
+})
+
+it('renders nested default tab branches without implicit stack screens', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const page = createRoute({
+    getParentRoute: () => root,
+    path: '/page',
+    component: () => <p>Nested direct page</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([page]),
+    native: {
+      rootKind: 'tabs',
+      initialContainer: 'group',
+      containers: {
+        group: { initialChild: 'page' },
+        page: { parent: 'group', initialHref: '/page' },
+      },
+    },
+  })
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Nested direct page')
+  expect(screen.queryByTestId('native-back')).toBeNull()
+  router.history.destroy()
+})
+
+it('keeps an eagerly rendered direct pager branch unfocused', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const a = createRoute({
+    getParentRoute: () => root,
+    path: '/a',
+    component: () => <p>Pager first</p>,
+  })
+  const b = createRoute({
+    getParentRoute: () => root,
+    path: '/b',
+    component: () => <p>Pager adjacent</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([a, b]),
+    native: {
+      rootKind: 'tabs',
+      initialContainer: 'a',
+      containers: {
+        a: { initialHref: '/a', keepActive: true },
+        b: { initialHref: '/b', keepActive: true },
+      },
+      renderContainer: ({ children }) => (
+        <>
+          {children.map((item) => (
+            <React.Fragment key={item.key}>{item.content}</React.Fragment>
+          ))}
+        </>
+      ),
+    },
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Pager first')
+  await screen.findByText('Pager adjacent')
+  expect(navigation.getFocusedContainer()).toBe('a')
+  expect(
+    screen.getByText('Pager adjacent').closest('[style*="display: none"]'),
+  ).toBeNull()
+  router.history.destroy()
+})
+
+it('keeps a dirty direct tab blocker registered after selecting another tab', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const dirty = createRoute({
+    getParentRoute: () => root,
+    path: '/dirty',
+    component: function DirtyTab() {
+      useBlocker({ shouldBlockFn: () => true })
+      return <p>Dirty direct tab</p>
+    },
+  })
+  const clean = createRoute({
+    getParentRoute: () => root,
+    path: '/clean',
+    component: () => <p>Clean direct tab</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([dirty, clean]),
+    native: {
+      rootKind: 'tabs',
+      initialContainer: 'dirty',
+      containers: {
+        dirty: { initialHref: '/dirty' },
+        clean: { initialHref: '/clean' },
+      },
+    },
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Dirty direct tab')
+  const entry = navigation.getActiveEntry()!
+  await waitFor(() => expect(navigation.isRemovalBlocked(entry.key)).toBe(true))
+  await act(() => navigation.select('clean'))
+  await screen.findByText('Clean direct tab')
+  expect(navigation.isRemovalBlocked(entry.key)).toBe(true)
+  expect(await navigation.reset('dirty', ['/dirty'])).toBe(false)
+  router.history.destroy()
+})
+
+it('direct-link-root-stack preserves a descendant destination under a slash-root layout stack', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const map = createRoute({
+    getParentRoute: () => root,
+    id: '_map',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          rootKind: 'custom',
+          initialContainer: 'main',
+          containers: { main: { initialHref: '/', kind: 'stack' } },
+          renderContainer: ({ children, selected }) =>
+            children.find((item) => item.key === selected)?.content,
+        },
+      },
+    },
+  })
+  const home = createRoute({
+    getParentRoute: () => map,
+    path: '/',
+    component: () => <p>Root stack home</p>,
+  })
+  const search = createRoute({
+    getParentRoute: () => map,
+    path: '/search',
+    component: () => <p>Root stack direct Search</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([map.addChildren([home, search])]),
+    native: {
+      initialContainer: 'app',
+      containers: { app: { initialHref: '/search' } },
+    },
+  })
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Root stack direct Search')
+  expect(getNativeNavigation(router).getActiveEntry()?.href).toBe('/search')
+  router.history.destroy()
+})
+
+it('owner-aware navigation returns to the existing tab owner beneath covering pages', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const tabs = createRoute({
+    getParentRoute: () => root,
+    id: '_tabs',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          rootKind: 'tabs',
+          initialContainer: 'map',
+          containers: {
+            map: { initialHref: '/' },
+            saved: { initialHref: '/saved' },
+          },
+        },
+      },
+    },
+  })
+  const home = createRoute({
+    getParentRoute: () => tabs,
+    path: '/',
+    component: () => <p>Diagnostic map</p>,
+  })
+  const saved = createRoute({
+    getParentRoute: () => tabs,
+    path: '/saved',
+    component: () => <p>Diagnostic saved</p>,
+  })
+  const detail = createRoute({
+    getParentRoute: () => root,
+    path: '/detail',
+    component: () => <p>Diagnostic detail</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([tabs.addChildren([home, saved]), detail]),
+  })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Diagnostic map')
+  const owner = navigation.getSnapshot().stacks.main![0]!
+  try {
+    await act(() => router.navigate({ to: '/detail' }))
+    await act(() => router.navigate({ to: '/saved' }))
+    expect(navigation.getSnapshot().stacks.main).toHaveLength(1)
+    expect(navigation.getSnapshot().stacks.main![0]).toBe(owner)
+    expect(owner.navigator!.getFocusedContainer()).toBe('saved')
+  } finally {
+    router.history.destroy()
+  }
+})
+
+function ownerAwareFixture() {
+  const flags = { cover: false }
+  const blocked: Array<{ pathname: string }> = []
+  const root = createRootRoute({ component: Outlet })
+  const tabs = createRoute({
+    getParentRoute: () => root,
+    id: '_tabs',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          rootKind: 'tabs',
+          initialContainer: 'map',
+          containers: {
+            map: { initialHref: '/' },
+            saved: { initialHref: '/saved' },
+            activity: { initialHref: '/activity' },
+          },
+        },
+      },
+    },
+  })
+  const map = createRoute({
+    getParentRoute: () => tabs,
+    id: '_map',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          rootKind: 'custom',
+          initialContainer: 'main',
+          containers: { main: { initialHref: '/', kind: 'stack' } },
+          renderContainer: ({ children, selected }) =>
+            children.find((item) => item.key === selected)?.content,
+        },
+      },
+    },
+  })
+  const home = createRoute({
+    getParentRoute: () => map,
+    path: '/',
+    component: () => <p>Owner map</p>,
+  })
+  const search = createRoute({
+    getParentRoute: () => map,
+    path: '/search',
+    component: () => <p>Owner search</p>,
+  })
+  const saved = createRoute({
+    getParentRoute: () => tabs,
+    path: '/saved',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          rootKind: 'tabs',
+          initialContainer: 'archive',
+          containers: {
+            archive: { initialHref: '/saved/archive' },
+            buds: { initialHref: '/saved/buds' },
+          },
+        },
+      },
+    },
+  })
+  const savedIndex = createRoute({ getParentRoute: () => saved, path: '/' })
+  const archive = createRoute({
+    getParentRoute: () => saved,
+    path: '/archive',
+    component: () => <p>Owner archive</p>,
+  })
+  const buds = createRoute({
+    getParentRoute: () => saved,
+    path: '/buds',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: {
+          rootKind: 'custom',
+          initialContainer: 'main',
+          containers: { main: { initialHref: '/saved/buds/', kind: 'stack' } },
+          renderContainer: ({ children, selected }) =>
+            children.find((item) => item.key === selected)?.content,
+        },
+      },
+    },
+  })
+  const budsIndex = createRoute({
+    getParentRoute: () => buds,
+    path: '/',
+    validateSearch: (search) => ({ q: String(search.q ?? '') }),
+    component: function BudsDraft() {
+      const [value, setValue] = React.useState('')
+      return (
+        <>
+          <p>Owner buds {budsIndex.useSearch().q}</p>
+          <input
+            aria-label="Owner draft"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+        </>
+      )
+    },
+  })
+  const user = createRoute({
+    getParentRoute: () => buds,
+    path: '/users/$id',
+    component: function OwnerUser() {
+      const { id } = useParams({ strict: false })
+      return <p>Owner user {id}</p>
+    },
+  })
+  const activity = createRoute({
+    getParentRoute: () => tabs,
+    path: '/activity',
+    component: () => <p>Owner activity</p>,
+  })
+  const cover = createRoute({
+    getParentRoute: () => root,
+    path: '/cover',
+    component: function Cover() {
+      const blocker = useBlocker({
+        shouldBlockFn: ({ next }) => {
+          blocked.push(next)
+          return flags.cover
+        },
+        withResolver: true,
+      })
+      return (
+        <>
+          <p>
+            {blocker.status === 'blocked' ? 'Cover blocked' : 'Owner cover'}
+          </p>
+          {blocker.status === 'blocked' && (
+            <>
+              <button onClick={blocker.proceed}>Owner proceed</button>
+              <button onClick={blocker.reset}>Owner cancel</button>
+            </>
+          )}
+        </>
+      )
+    },
+  })
+  const collection = createRoute({
+    getParentRoute: () => root,
+    path: '/collections/$id',
+    component: Outlet,
+    staticData: {
+      native: {
+        navigator: (match) => ({
+          rootKind: 'custom',
+          initialContainer: 'main',
+          containers: {
+            main: {
+              initialHref: `/collections/${match.params.id}/`,
+              kind: 'stack',
+            },
+          },
+          renderContainer: ({ children, selected }) =>
+            children.find((item) => item.key === selected)?.content,
+        }),
+      },
+    },
+  })
+  const collectionIndex = createRoute({
+    getParentRoute: () => collection,
+    path: '/',
+    component: () => <p>Collection index</p>,
+  })
+  const collectionMap = createRoute({
+    getParentRoute: () => collection,
+    path: '/map',
+    component: () => <p>Collection map</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([
+      collection.addChildren([collectionIndex, collectionMap]),
+      tabs.addChildren([
+        map.addChildren([home, search]),
+        saved.addChildren([
+          savedIndex,
+          archive,
+          buds.addChildren([budsIndex, user]),
+        ]),
+        activity,
+      ]),
+      cover,
+    ]),
+    native: {
+      rootKind: 'custom',
+      initialContainer: 'app',
+      containers: { app: { initialHref: '/', kind: 'stack' } },
+      renderContainer: ({ children, selected }) =>
+        children.find((item) => item.key === selected)?.content,
+    },
+  })
+  return { router, navigation: getNativeNavigation(router), flags, blocked }
+}
+
+it('owner-aware navigation retains nested tab stacks and drafts through covering pages', async () => {
+  const { router, navigation } = ownerAwareFixture()
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Owner map')
+  const owner = navigation.getSnapshot().stacks.app![0]!
+  await act(() => router.navigate({ to: '/saved/buds' }))
+  fireEvent.change(await screen.findByLabelText('Owner draft'), {
+    target: { value: 'retained' },
+  })
+  await act(() =>
+    router.navigate({ to: '/saved/buds/users/$id', params: { id: 'a' } }),
+  )
+  const author = navigation.getActiveEntry()
+  await act(() => router.navigate({ to: '/saved/archive' }))
+  await act(() => router.navigate({ to: '/cover' }))
+  await act(() => router.navigate({ to: '/saved' }))
+  expect(navigation.getSnapshot().stacks.app).toHaveLength(1)
+  expect(navigation.getSnapshot().stacks.app![0]).toBe(owner)
+  await screen.findByText('Owner archive')
+  await act(() => router.navigate({ to: '/saved/buds' }))
+  expect(navigation.getActiveEntry()).toBe(author)
+  await screen.findByText('Owner user a')
+  await act(() => navigation.back())
+  expect(
+    (await screen.findByLabelText('Owner draft')).getAttribute('value'),
+  ).toBe('retained')
+  router.history.destroy()
+})
+
+it('owner-aware navigation rolls back the entire path on cancel and commits once on proceed', async () => {
+  const { router, navigation, flags, blocked } = ownerAwareFixture()
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Owner map')
+  await act(() => router.navigate({ to: '/saved/archive' }))
+  const bottom = navigation.getSnapshot().stacks.app![0]!.navigator!
+  const saved = bottom.getSnapshot().stacks.saved![0]!.navigator!
+  await act(() => router.navigate({ to: '/cover' }))
+  flags.cover = true
+  const before = navigation.getSnapshot()
+  const savedBefore = saved.getSnapshot()
+  let pending!: Promise<void>
+  act(() => {
+    pending = router.navigate({ to: '/saved/buds' })
+  })
+  await screen.findByText('Cover blocked')
+  expect(navigation.getSnapshot()).toBe(before)
+  expect(saved.getSnapshot()).toBe(savedBefore)
+  expect(blocked.at(-1)!.pathname.replace(/\/$/, '')).toBe('/saved/buds')
+  fireEvent.click(screen.getByText('Owner cancel'))
+  await act(() => pending)
+  expect(navigation.getSnapshot()).toBe(before)
+  expect(saved.getSnapshot()).toBe(savedBefore)
+  const committed: Array<string> = []
+  navigation.onTreeChange((_owner, change) => {
+    if (change.removed.some((entry) => entry.href === '/cover')) {
+      expect(saved.getFocusedContainer()).toBe('buds')
+      committed.push(navigation.getActiveEntry()!.href)
+    }
+  })
+  act(() => {
+    pending = router.navigate({ to: '/saved/buds' })
+  })
+  await screen.findByText('Cover blocked')
+  fireEvent.click(screen.getByText('Owner proceed'))
+  await act(() => pending)
+  expect(navigation.getSnapshot().stacks.app).toHaveLength(1)
+  expect(saved.getFocusedContainer()).toBe('buds')
+  expect(committed).toHaveLength(1)
+  await screen.findByLabelText('Owner draft')
+  router.history.destroy()
+})
+
+it('owner-aware navigation resolves duplicate owners relative to the calling visit', async () => {
+  const { router, navigation } = ownerAwareFixture()
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Owner map')
+  const first = navigation.getSnapshot().stacks.app![0]!
+  await act(() => router.navigate({ to: '/saved/buds' }))
+  await act(() =>
+    router.navigate({ to: '/saved/buds/users/$id', params: { id: 'first' } }),
+  )
+  const author = navigation.getActiveEntry()
+  await act(() => router.navigate({ to: '/saved/archive' }))
+  const firstCaller = navigation.getActiveEntry()!.value
+  await act(() =>
+    router.navigate({ to: '/saved', target: 'app', stackBehavior: 'push' }),
+  )
+  const second = navigation.getSnapshot().stacks.app!.at(-1)!
+  expect(second).not.toBe(first)
+  const removedCaller = navigation.getActiveEntry()!.value
+  await act(() => firstCaller.navigate({ to: '/saved/buds' }))
+  expect(navigation.getSnapshot().stacks.app).toHaveLength(1)
+  expect(navigation.getSnapshot().stacks.app![0]).toBe(first)
+  expect(navigation.getActiveEntry()).toBe(author)
+  await act(() => removedCaller.navigate({ to: '/activity' }))
+  expect(navigation.getActiveEntry()).toBe(author)
+  router.history.destroy()
+})
+
+it('owner-aware navigation reuses Search and updates direct page search without extra visits', async () => {
+  const { router, navigation } = ownerAwareFixture()
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Owner map')
+  await act(() => router.navigate({ to: '/search' }))
+  const search = navigation.getActiveEntry()
+  await act(() => router.navigate({ to: '/cover' }))
+  await act(() => router.navigate({ to: '/search' }))
+  expect(navigation.getActiveEntry()).toBe(search)
+  await act(() => router.navigate({ to: '/saved/buds/' }))
+  const key = navigation.getActiveEntry()!.key
+  await act(() =>
+    router.navigate({
+      to: '/saved/buds/',
+      search: { q: 'new' },
+      stackBehavior: 'reuse',
+    }),
+  )
+  expect(navigation.getActiveEntry()!.key).toBe(key)
+  await screen.findByText('Owner buds new')
+  router.history.destroy()
+})
+
+it('owner-aware href destinations restore nested layouts and explicit index visits do not duplicate', async () => {
+  const { router, navigation } = ownerAwareFixture()
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Owner map')
+  await act(() => router.navigate({ to: '/saved/buds/' }))
+  const entry = navigation.getActiveEntry()!
+  const stack = getNativeNavigation(entry.value)
+  expect(stack.getSnapshot().stacks.main).toHaveLength(1)
+  await act(() =>
+    router.navigate({ to: '/saved/buds/users/$id', params: { id: 'a' } }),
+  )
+  const author = navigation.getActiveEntry()
+  await act(() => router.navigate({ to: '/cover' }))
+  await act(() => router.navigate({ href: '/saved/buds' }))
+  expect(navigation.getActiveEntry()).toBe(author)
+  await act(() => router.navigate({ to: '/saved/buds/' }))
+  expect(stack.getSnapshot().stacks.main).toHaveLength(1)
+  expect(navigation.getActiveEntry()!.key).toBe(entry.key)
+  router.history.destroy()
+})
+
+it('owner-aware parameterized layouts restore only the matching owner', async () => {
+  const { router, navigation } = ownerAwareFixture()
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Owner map')
+  await act(() =>
+    router.navigate({ to: '/collections/$id/map', params: { id: 'a' } }),
+  )
+  const first = navigation.getActiveEntry()
+  await act(() =>
+    router.navigate({ to: '/collections/$id/map', params: { id: 'b' } }),
+  )
+  const second = navigation.getActiveEntry()
+  expect(second).not.toBe(first)
+  await act(() =>
+    router.navigate({ to: '/collections/$id', params: { id: 'a' } }),
+  )
+  expect(navigation.getActiveEntry()).toBe(first)
+  expect(navigation.getSnapshot().stacks.app).toHaveLength(2)
+  router.history.destroy()
+})
+
+it('owner-aware root callers keep the active duplicate unless oldest reuse is explicit', async () => {
+  const { router, navigation } = ownerAwareFixture()
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Owner map')
+  const first = navigation.getSnapshot().stacks.app![0]!
+  await act(() => router.navigate({ to: '/saved/buds' }))
+  await act(() =>
+    router.navigate({ to: '/saved', target: 'app', stackBehavior: 'push' }),
+  )
+  const second = navigation.getSnapshot().stacks.app!.at(-1)!
+  await act(() => router.navigate({ to: '/saved' }))
+  expect(navigation.getSnapshot().stacks.app!.at(-1)).toBe(second)
+  await act(() =>
+    router.navigate({
+      to: '/saved',
+      stackBehavior: 'reuse',
+      stackMatch: 'oldest',
+    }),
+  )
+  expect(navigation.getSnapshot().stacks.app).toEqual([first])
+  await screen.findByText('Owner buds')
+  router.history.destroy()
+})
+
+it('owner-aware blocked activation cannot commit after a newer navigation wins', async () => {
+  const { router, navigation, flags } = ownerAwareFixture()
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Owner map')
+  await act(() => router.navigate({ to: '/cover' }))
+  flags.cover = true
+  let pending!: Promise<void>
+  act(() => {
+    pending = router.navigate({ to: '/saved/buds' })
+  })
+  await screen.findByText('Cover blocked')
+  await act(() => router.navigate({ to: '/activity', ignoreBlocker: true }))
+  await act(() => pending)
+  await screen.findByText('Owner activity')
+  expect(navigation.getSnapshot().stacks.app).toHaveLength(1)
+  expect(navigation.getActiveEntry()!.href).toBe('/activity')
+  router.history.destroy()
+})

@@ -72,7 +72,10 @@ export function createNavigationPersistence(
     }, options.debounceMs ?? 200)
   })
   return {
-    initialize() {
+    initialize(target?: string) {
+      if (target !== undefined) {
+        return initialize(target)
+      }
       restored ??= (async () => {
         try {
           const serialized = await options.storage.getItem(options.key)
