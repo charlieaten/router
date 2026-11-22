@@ -48,6 +48,13 @@ export type BaseConfig = z.infer<typeof baseConfigSchema>
 
 export const configSchema = baseConfigSchema.extend({
   routePlatform: z.enum(['web', 'native']).optional(),
+  /** Emit a complete type catalog alongside a platform-filtered JavaScript tree. */
+  routeTypes: z
+    .object({
+      generatedRouteTree: z.string(),
+      routeFileIgnorePattern: z.string().optional(),
+    })
+    .optional(),
   generatedRouteTree: z.string().optional().default('./src/routeTree.gen.ts'),
   disableTypes: z.boolean().optional().default(false),
   addExtensions: z
@@ -149,6 +156,29 @@ export function getConfig(
         process.cwd(),
         configDirectory,
         config.generatedRouteTree,
+      )
+    }
+  }
+
+  if (config.routeTypes) {
+    config.routeTypes.generatedRouteTree = path.resolve(
+      configDirectory,
+      config.routeTypes.generatedRouteTree,
+    )
+    if (
+      !config.disableTypes ||
+      !config.generatedRouteTree.endsWith('.js') ||
+      !/\.tsx?$/.test(config.routeTypes.generatedRouteTree) ||
+      config.routeTypes.generatedRouteTree.endsWith('.d.ts') ||
+      config.generatedRouteTree.replace(/\.js$/, '') ===
+        config.routeTypes.generatedRouteTree.replace(/\.tsx?$/, '') ||
+      path.resolve(config.generatedRouteTree) ===
+        config.routeTypes.generatedRouteTree ||
+      config.generatedRouteTree.replace(/\.js$/, '.d.ts') ===
+        config.routeTypes.generatedRouteTree
+    ) {
+      throw new Error(
+        'routeTypes requires a separate JavaScript runtime tree with disableTypes: true',
       )
     }
   }

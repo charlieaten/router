@@ -38,7 +38,8 @@
     "test:types:ts60": "tsc6",
     "test:types:ts70": "tsc",
     "test:build": "publint --strict && attw --ignore-rules no-resolution --pack .",
-    "build": "vite build"
+    "build": "vite build",
+    "test:perf:metro": "vitest bench --mode benchmark tests/metro.bench.ts"
   },
   "type": "module",
   "types": "dist/esm/index.d.ts",
@@ -103,7 +104,17 @@
         "default": "./dist/cjs/esbuild.cjs"
       }
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./metro": {
+      "import": {
+        "types": "./dist/esm/metro.d.ts",
+        "default": "./dist/esm/metro.js"
+      },
+      "require": {
+        "types": "./dist/cjs/metro.d.cts",
+        "default": "./dist/cjs/metro.cjs"
+      }
+    }
   },
   "sideEffects": false,
   "files": [

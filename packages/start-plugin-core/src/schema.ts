@@ -87,6 +87,18 @@ export function parseStartConfig(
           ...options.router,
           routesDirectory,
           generatedRouteTree,
+          ...(options.router.routeTypes
+            ? {
+                routeTypes: {
+                  ...options.router.routeTypes,
+                  generatedRouteTree: path.resolve(
+                    root,
+                    srcDirectory,
+                    options.router.routeTypes.generatedRouteTree,
+                  ),
+                },
+              }
+            : {}),
         },
         root,
       ),

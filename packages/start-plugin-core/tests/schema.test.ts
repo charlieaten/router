@@ -39,3 +39,23 @@ describe('start config schema', () => {
     )
   })
 })
+
+test('resolves the shared route catalog under srcDirectory for both bundlers', () => {
+  for (const parse of [parseViteStartConfig, parseRsbuildStartConfig]) {
+    const config = parse(
+      {
+        srcDirectory: 'app',
+        router: {
+          generatedRouteTree: 'runtime.js',
+          disableTypes: true,
+          routeTypes: { generatedRouteTree: 'types.ts' },
+        },
+      },
+      corePluginOpts,
+      root,
+    )
+    expect(config.router.routeTypes?.generatedRouteTree).toBe(
+      path.resolve(root, 'app/types.ts'),
+    )
+  }
+})
