@@ -108,8 +108,46 @@ export function transform({
   const routeCall = routeCalls[0]!
   const routeIdQuote = getRouteIdQuote(source, routeCall.routeIdArg)
 
+  const options = routeCall.optionsArg
+  if (t.isObjectExpression(options)) {
+    for (const property of options.properties) {
+      if (!t.isObjectProperty(property) && !t.isObjectMethod(property)) {
+        continue
+      }
+
+      const { key } = property
+      if (
+        !(
+          t.isStringLiteral(key, { value: 'platform' }) ||
+          (!property.computed && t.isIdentifier(key, { name: 'platform' }))
+        )
+      ) {
+        continue
+      }
+
+      const value =
+        t.isObjectProperty(property) && t.isStringLiteral(property.value)
+          ? property.value.value
+          : undefined
+      if (
+        ctx.lazy ||
+        node.platform !== undefined ||
+        (value !== 'web' && value !== 'native')
+      ) {
+        return {
+          result: 'error',
+          error: new Error(
+            'Set platform once on createFileRoute to "web" or "native".',
+          ),
+        }
+      }
+      node.platform = value
+    }
+  }
+
   const createFileRouteProps = getCreateFileRouteProps(routeCall.optionsArg)
   if (createFileRouteProps) {
+    createFileRouteProps.delete('platform')
     node.createFileRouteProps = createFileRouteProps
   }
 

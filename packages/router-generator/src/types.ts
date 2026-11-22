@@ -18,6 +18,7 @@ export type RouteNode = {
   children?: Array<RouteNode>
   parent?: RouteNode
   createFileRouteProps?: Set<string>
+  platform?: 'web' | 'native'
   /**
    * For virtual routes: the routePath of the explicit parent from virtual config.
    * Used to prevent auto-nesting siblings based on path prefix matching (#5822, #5431).

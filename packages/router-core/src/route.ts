@@ -977,6 +977,9 @@ export interface FilebaseRouteOptionsInterface<
   TServerMiddlewares = unknown,
   THandlers = undefined,
 > {
+  /** Build target for this file route. Omit to include it in every generated tree. */
+  platform?: 'web' | 'native'
+
   validateSearch?: Constrain<TSearchValidator, AnyValidator, DefaultValidator>
 
   shouldReload?:

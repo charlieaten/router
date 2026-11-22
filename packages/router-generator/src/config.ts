@@ -47,6 +47,7 @@ export const baseConfigSchema = z.object({
 export type BaseConfig = z.infer<typeof baseConfigSchema>
 
 export const configSchema = baseConfigSchema.extend({
+  routePlatform: z.enum(['web', 'native']).optional(),
   generatedRouteTree: z.string().optional().default('./src/routeTree.gen.ts'),
   disableTypes: z.boolean().optional().default(false),
   addExtensions: z

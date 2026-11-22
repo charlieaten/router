@@ -485,6 +485,35 @@ export class Generator {
       Generator.handleNode(node, acc, prefixMap, this.config)
     }
 
+    const platform = this.config.routePlatform
+    if (platform) {
+      const excluded = new Set<RouteNode>()
+      const prune = (
+        nodes: Array<RouteNode>,
+        parentExcluded = false,
+      ): Array<RouteNode> =>
+        nodes.filter((node) => {
+          const omit =
+            parentExcluded ||
+            (node.platform !== undefined && node.platform !== platform)
+          if (omit) {
+            excluded.add(node)
+          }
+          if (node.children) {
+            node.children = prune(node.children, omit)
+          }
+          return !omit
+        })
+      acc.routeTree = prune(acc.routeTree)
+      acc.routeNodes = acc.routeNodes.filter((node) => !excluded.has(node))
+      for (const [key, node] of acc.routeNodesByPath) {
+        if (excluded.has(node)) {
+          acc.routeNodesByPath.delete(key)
+          delete acc.routePiecesByPath[key]
+        }
+      }
+    }
+
     this.crawlingResult = { rootRouteNode, routeFileResult, acc }
 
     // this is the first time the generator runs, so read in the route tree file if it exists yet
@@ -1132,6 +1161,13 @@ ${acc.routeTree.map((child) => `${child.variableName}Route: typeof ${getResolved
         updatedCacheEntry.fileContent = transformResult.output
         shouldWriteRouteFile = true
       }
+    }
+
+    if (
+      this.config.routePlatform &&
+      node.platform !== previousCacheEntry?.node.platform
+    ) {
+      shouldWriteTree = true
     }
 
     for (const plugin of this.plugins) {
