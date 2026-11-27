@@ -35,6 +35,11 @@ export interface NativeNavigationOptions {
   invalidateOnResume?: boolean
   rootKind?: NavigationDefinition['rootKind']
   backBehavior?: NavigationDefinition['backBehavior']
+  /** Appearance options for the default Screens stack hosts. */
+  stackHost?: Pick<
+    React.ComponentProps<typeof Stack.Host>,
+    'colorScheme' | 'direction'
+  >
   renderContainer?: React.ComponentType<NativeContainerRenderProps>
   renderStack?: React.ComponentType<NativeContainerRenderProps>
   linking?: { prefixes: Array<string> }
@@ -65,6 +70,7 @@ export type NativeNavigatorOptions = {
   | 'containers'
   | 'rootKind'
   | 'backBehavior'
+  | 'stackHost'
   | 'renderContainer'
   | 'renderStack'
 >
@@ -91,11 +97,13 @@ export interface NativeScreenOptions {
   presentation?:
     | 'push'
     | 'formSheet'
+    | 'pageSheet'
     | 'modal'
     | 'fullScreenModal'
     | 'transparentModal'
     | 'containedModal'
     | 'containedTransparentModal'
+    | 'containedModalReplacingContent'
   keepActive?: boolean
 }
 

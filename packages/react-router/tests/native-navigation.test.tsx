@@ -22,11 +22,40 @@ import {
   useParams,
 } from '../dist/native/esm/index.native.js'
 import { getNativeNavigation } from '../dist/native/esm/native/controller.js'
+import { stack } from '../dist/native/esm/stack.native.js'
 import { Platform, modalInstances } from './native-host'
+import type { NativeScreenOptions } from '../dist/native/esm/index.native.js'
 
 afterEach(() => {
   cleanup()
   Platform.OS = 'ios'
+})
+
+it('renders Android stack header configs after the screen content', async () => {
+  Platform.OS = 'android'
+  const root = createRootRoute({ component: Outlet })
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <p>Stack home</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home]),
+    native: {
+      rootKind: 'stack',
+      initialContainer: 'main',
+      containers: { main: { kind: 'stack', initialHref: '/' } },
+    },
+  })
+  const { container } = render(<RouterProvider router={router} />)
+  await screen.findByText('Stack home')
+
+  const headers = container.querySelectorAll('header')
+  expect(headers).toHaveLength(2)
+  for (const header of headers) {
+    expect(header.parentElement?.lastElementChild).toBe(header)
+  }
+  router.history.destroy()
 })
 
 it('releases closed Android modal hosts without waiting for an iOS-only dismissal event', async () => {
@@ -62,6 +91,65 @@ it('releases closed Android modal hosts without waiting for an iOS-only dismissa
   await act(() => navigation.back())
   await waitFor(() => expect(modalInstances.size).toBe(0))
 })
+
+it.each([
+  ['ios', 'modal', 'native-page-sheet'],
+  ['android', 'pageSheet', 'native-page-sheet'],
+  ['ios', 'containedModalReplacingContent', 'native-contained-replacing'],
+] as const)(
+  'presents %s %s with the matching Screens host',
+  async (platform, presentation, host) => {
+    Platform.OS = platform
+    const root = createRootRoute({ component: Outlet })
+    const home = createRoute({
+      getParentRoute: () => root,
+      path: '/',
+      component: () => <p>Home</p>,
+    })
+    const overlay = createRoute({
+      getParentRoute: () => root,
+      path: '/overlay',
+      staticData: { native: { presentation } satisfies NativeScreenOptions },
+      component: () => <p>Overlay content</p>,
+    })
+    const router = createRouter({
+      routeTree: root.addChildren([home, overlay]),
+      native: {
+        ...stack({
+          initialRoute: '/',
+          stackHost: { colorScheme: 'dark', direction: 'rtl' },
+        }),
+        containers: {
+          main: { initialHref: '/', kind: 'stack' },
+          overlay: { initialHref: '/overlay', overlay: true },
+        },
+      },
+    })
+    const navigation = getNativeNavigation(router)
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Home')
+    expect(
+      screen.getByTestId('native-stack').getAttribute('data-color-scheme'),
+    ).toBe('dark')
+    expect(screen.getByTestId('native-stack').getAttribute('dir')).toBe('rtl')
+
+    await act(() =>
+      navigation.navigate({ href: '/overlay', target: 'overlay' }),
+    )
+    expect(screen.getByTestId(host).textContent).toContain('Overlay content')
+    expect(modalInstances.size).toBe(0)
+    if (host === 'native-page-sheet') {
+      await act(async () =>
+        fireEvent.click(screen.getByText('Dismiss native sheet')),
+      )
+    } else {
+      await act(() => navigation.back())
+      fireEvent.click(screen.getByText('Finish contained dismissal'))
+    }
+    await waitFor(() => expect(screen.queryByTestId(host)).toBeNull())
+    expect(navigation.getActiveEntry()?.href).toBe('/')
+  },
+)
 
 it('uses provider context overrides for native route loading', async () => {
   const root = createRootRouteWithContext<{ actor: string }>()({
@@ -176,7 +264,7 @@ it('stops stale child lifecycle callbacks when a parent redirects during activat
   expect(enterChild).not.toHaveBeenCalled()
 })
 
-it('acknowledges native back without asking the host to pop the same screen again', async () => {
+it('renders direct routes without a navigator and keeps Back available', async () => {
   const root = createRootRoute({ component: Outlet })
   const home = createRoute({
     getParentRoute: () => root,
@@ -189,6 +277,33 @@ it('acknowledges native back without asking the host to pop the same screen agai
     component: () => <p>Detail</p>,
   })
   const router = createRouter({ routeTree: root.addChildren([home, detail]) })
+  const navigation = getNativeNavigation(router)
+  render(<RouterProvider router={router} />)
+  await screen.findByText('Home')
+  await act(() => router.navigate({ to: '/detail' } as never))
+  await screen.findByText('Detail')
+  expect(screen.queryByTestId('native-stack')).toBeNull()
+  expect(screen.queryByTestId('native-tabs')).toBeNull()
+  await act(() => navigation.back())
+  await screen.findByText('Home')
+})
+
+it('acknowledges native back without asking the host to pop the same screen again', async () => {
+  const root = createRootRoute({ component: Outlet })
+  const home = createRoute({
+    getParentRoute: () => root,
+    path: '/',
+    component: () => <p>Home</p>,
+  })
+  const detail = createRoute({
+    getParentRoute: () => root,
+    path: '/detail',
+    component: () => <p>Detail</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([home, detail]),
+    native: stack({ initialRoute: '/' }),
+  })
   const navigation = getNativeNavigation(router)
   render(<RouterProvider router={router} />)
   await screen.findByText('Home')
@@ -1016,6 +1131,7 @@ it('hosts a standard navigator with cancellable events and visit-owned child sta
     },
   })
   const router = createRouter({
+    native: stack({ initialRoute: '/' }),
     routeTree: root.addChildren([home, parent.addChildren([child])]),
   })
   const nav = getNativeNavigation(router)
@@ -1481,10 +1597,10 @@ it.each([
       component: Outlet,
       staticData: {
         native: {
-          navigator: {
-            initialContainer: 'inner',
-            containers: { inner: { initialHref: '/nested/item/a' } },
-          },
+          navigator: stack({
+            id: 'inner',
+            initialRoute: '/nested/item/a',
+          }),
         },
       },
     })
@@ -1532,13 +1648,14 @@ it.each([
       </>
     )
     if (presenter !== 'default') {
-      parent.options.staticData!.native!.navigator = {
-        initialContainer: 'inner',
-        containers: { inner: { initialHref: '/nested/item/a' } },
-        renderStack: custom,
-      }
+      parent.options.staticData!.native!.navigator = stack({
+        id: 'inner',
+        initialRoute: '/nested/item/a',
+        presenter: custom,
+      })
     }
     const router = createRouter({
+      native: stack({ initialRoute: '/' }),
       routeTree: root.addChildren([home, parent.addChildren([detail])]),
       Wrap: ({ children }) => (
         <div data-testid="application-wrap">{children}</div>

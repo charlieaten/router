@@ -1,5 +1,6 @@
 import { createStandardNavigator } from 'standard-navigation'
 import { expectTypeOf } from 'vitest'
+import { stack } from '@tanstack/react-router/stack'
 import {
   Link,
   RouterProvider,
@@ -69,10 +70,16 @@ function TypedNativeScreen() {
   return <Link {...options}>Open venue</Link>
 }
 
-const nestedNavigator: NativeNavigatorOptions = {
-  initialContainer: 'feed',
-  containers: { feed: { initialHref: '/venues/123' } },
-}
+const nestedNavigator = stack({
+  id: 'feed',
+  initialRoute: '/venues/123',
+  stackHost: { colorScheme: 'dark' },
+  presenter: (props) => {
+    expectTypeOf(props).toEqualTypeOf<NativeContainerRenderProps>()
+    return null
+  },
+})
+expectTypeOf(nestedNavigator).toEqualTypeOf<NativeNavigatorOptions>()
 const nestedRoute = createRoute({
   getParentRoute: () => root,
   path: 'nested',

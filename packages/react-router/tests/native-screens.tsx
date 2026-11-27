@@ -61,7 +61,29 @@ function HeaderConfig({ ios, android }: any) {
     </header>
   )
 }
-export const Stack = { Host, Screen, HeaderConfig }
+export const Stack = {
+  Host: function StackHost({
+    children,
+    colorScheme,
+    direction,
+  }: {
+    children?: React.ReactNode
+    colorScheme?: string
+    direction?: string
+  }) {
+    return (
+      <div
+        data-testid="native-stack"
+        data-color-scheme={colorScheme}
+        dir={direction}
+      >
+        {children}
+      </div>
+    )
+  },
+  Screen,
+  HeaderConfig,
+}
 function TabsHost({
   children,
   navStateRequest,
@@ -97,11 +119,13 @@ export function FormSheet({
   isOpen,
   children,
   onNativeDismissPrevented,
+  onNativeDismiss,
   onDismiss,
 }: {
   isOpen: boolean
   children: React.ReactNode
   onNativeDismissPrevented?: () => void
+  onNativeDismiss?: () => void
   onDismiss?: () => void
 }) {
   // Native sheets retain the outgoing subtree until their close animation ends.
@@ -124,10 +148,36 @@ export function FormSheet({
       >
         Native close
       </button>
+      <button onClick={onNativeDismiss}>Dismiss native sheet</button>
       {children}
     </div>
   ) : null
 }
 
+export function PageSheet(props: React.ComponentProps<typeof FormSheet>) {
+  return (
+    <div data-testid="native-page-sheet">
+      <FormSheet {...props} />
+    </div>
+  )
+}
+
 export const ContainedModalProvider = Host
+export const ContainedModalReplacingContent = ({
+  isOpen,
+  children,
+  onDidDisappear,
+}: {
+  isOpen: boolean
+  children: React.ReactNode
+  onDidDisappear?: () => void
+}) => (
+  <div data-testid="native-contained-replacing">
+    {isOpen ? (
+      children
+    ) : (
+      <button onClick={onDidDisappear}>Finish contained dismissal</button>
+    )}
+  </div>
+)
 export const ContainedModalOverContent = FormSheet

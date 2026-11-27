@@ -12,7 +12,9 @@ import {
 import {
   ContainedModalOverContent,
   ContainedModalProvider,
+  ContainedModalReplacingContent,
   FormSheet,
+  PageSheet,
   Stack,
   Tabs,
 } from 'react-native-screens'
@@ -20,6 +22,8 @@ import { Matches } from './Matches'
 import { RouterContextProvider } from './RouterProviderShared'
 import { nativeOutletContext } from './native/outlet-context'
 import { VisitProvider } from './native/visit'
+import { NativeStack } from './native/stack'
+import { useRetained } from './native/use-retained'
 import {
   emitNativeNavigationEvent,
   flushNativeNavigation,
@@ -28,6 +32,7 @@ import {
   getScreenOptions,
 } from './native/controller'
 import type { RouterProps } from './RouterProviderShared'
+import type { StackHostOptions } from './native/stack'
 import type { AnyRouter, RegisteredRouter } from '@tanstack/router-core'
 import type { NavigationSnapshot } from '@tanstack/router-core/navigation'
 import type {
@@ -69,138 +74,20 @@ function Entry({ entry, active }: { entry: NativeEntry; active: boolean }) {
   )
 }
 
-function useRetained<T extends { key: string }>(
-  items: Array<T>,
-  retain?: (item: T) => boolean,
-) {
-  const [retained, setRetained] = React.useState(items)
-  const nativeDismissed = React.useRef(new Set<string>())
-  const current = new Map(items.map((item) => [item.key, item]))
-  const keys = new Set(retained.map((item) => item.key))
-  const rendered = [
-    ...retained.map((item) => current.get(item.key) ?? item),
-    ...items.filter((item) => !keys.has(item.key)),
-  ].filter(
-    (item) =>
-      current.has(item.key) ||
-      (!nativeDismissed.current.has(item.key) && retain?.(item) !== false),
-  )
-  React.useLayoutEffect(() => {
-    setRetained((previous) => {
-      const current = new Map(items.map((item) => [item.key, item]))
-      const keys = new Set(previous.map((item) => item.key))
-      return [
-        ...previous.map((item) => current.get(item.key) ?? item),
-        ...items.filter((item) => !keys.has(item.key)),
-      ].filter((item) => current.has(item.key) || retain?.(item) !== false)
-    })
-  }, [items, retain])
-  const forget = (key: string) => {
-    nativeDismissed.current.delete(key)
-    setRetained((previous) => previous.filter((item) => item.key !== key))
-  }
-  return {
-    rendered,
-    current,
-    forget,
-    acknowledge: (key: string) => nativeDismissed.current.add(key),
-  }
-}
-
-function NativeStack({
-  entries,
-  navigation,
-  selected,
-  onError,
-}: {
-  entries: Array<NativeEntry>
-  navigation: NativeNavigation
-  selected: boolean
-  onError: (error: unknown) => void
-}) {
-  const { rendered, current, forget, acknowledge } = useRetained(entries)
-  return (
-    <Stack.Host>
-      {rendered.map((entry) => {
-        const index = entries.findIndex((item) => item.key === entry.key)
-        const options = getScreenOptions(entry)
-        const event = (
-          type: 'transitionStart' | 'transitionEnd',
-          closing: boolean,
-        ) =>
-          emitNativeNavigationEvent(navigation, {
-            type,
-            target: entry.key,
-            closing,
-          })
-        // With no custom header configuration there is no React chrome to
-        // scope. Leave standalone content's boundary inside its Activity.
-        const content = (
-          <>
-            <Stack.HeaderConfig
-              title={options.title ?? entry.href}
-              {...options.header}
-            />
-            <Entry
-              entry={entry}
-              active={
-                !!options.keepActive ||
-                index < 0 ||
-                navigation.isRemovalBlocked(entry.key) ||
-                (selected && index >= entries.length - 2)
-              }
-            />
-          </>
-        )
-        return (
-          <Stack.Screen
-            {...options.stack}
-            key={entry.key}
-            screenKey={entry.key}
-            activityMode={current.has(entry.key) ? 'attached' : 'detached'}
-            preventNativeDismiss={navigation.isRemovalBlocked(entry.key)}
-            onWillAppear={() => event('transitionStart', false)}
-            onDidAppear={() => event('transitionEnd', false)}
-            onWillDisappear={() => event('transitionStart', true)}
-            onDidDisappear={() => event('transitionEnd', true)}
-            onNativeDismiss={(key) => {
-              // UIKit already popped it. Remove the React view without sending
-              // another activityMode=detached command during reconciliation.
-              acknowledge(key)
-              void navigation
-                .acknowledgeNativeDismiss(key)
-                .then(() => forget(key))
-                .catch(onError)
-            }}
-            onNativeDismissPrevented={() => {
-              void navigation.back({ target: entry.container }).catch(onError)
-            }}
-            onDismiss={forget}
-          >
-            {options.header ? (
-              <VisitProvider entry={entry}>{content}</VisitProvider>
-            ) : (
-              content
-            )}
-          </Stack.Screen>
-        )
-      })}
-    </Stack.Host>
-  )
-}
-
 function BranchStack({
+  hostOptions,
   items,
   selected,
   onBack,
 }: {
+  hostOptions: StackHostOptions
   items: NativeContainerRenderProps['children']
   selected: string
   onBack: (native: boolean) => Promise<boolean>
 }) {
   const { rendered, current, forget, acknowledge } = useRetained(items)
   return (
-    <Stack.Host>
+    <Stack.Host {...hostOptions}>
       {rendered.map((item) => (
         <Stack.Screen
           key={item.key}
@@ -216,8 +103,8 @@ function BranchStack({
           }}
           onDismiss={forget}
         >
-          <Stack.HeaderConfig hidden />
           {item.content}
+          <Stack.HeaderConfig hidden />
         </Stack.Screen>
       ))}
     </Stack.Host>
@@ -387,7 +274,7 @@ function NativeContainer({
       (parent ? (definitions[parent]?.kind ?? 'tabs') : config.rootKind)
     // Branch history retains visit state; only an explicit stack navigator
     // introduces stack presentation. Pagers can keep adjacent pages visible.
-    if (kind === 'tabs' || kind === 'drawer' || kind === 'custom') {
+    if (kind !== 'stack' && !(kind === undefined && config.renderStack)) {
       const entries = state.stacks[id]!
       return entries.map((entry, index) => (
         <View
@@ -480,8 +367,28 @@ function NativeContainer({
     }
     return (
       <NativeStack
+        hostOptions={config.stackHost}
+        Entry={Entry}
         entries={state.stacks[id]!}
         navigation={navigation}
+        selected={selected}
+        onError={onError}
+      />
+    )
+  }
+  if (
+    !id &&
+    !config.rootKind &&
+    !config.renderContainer &&
+    children.length === 1
+  ) {
+    return (
+      <NativeContainer
+        id={children[0]}
+        config={config}
+        router={router}
+        navigation={navigation}
+        state={state}
         selected={selected}
         onError={onError}
       />
@@ -612,6 +519,7 @@ function NativeContainer({
   if (kind === 'stack') {
     return (
       <BranchStack
+        hostOptions={config.stackHost}
         items={items}
         selected={selectedChild}
         onBack={(native) =>
@@ -643,9 +551,9 @@ function retainOverlay(item: Overlay) {
   const presentation = getScreenOptions(item.entry).presentation
   return (
     Platform.OS !== 'android' ||
-    !['modal', 'fullScreenModal', 'transparentModal'].includes(
-      presentation ?? '',
-    )
+    !presentation ||
+    presentation === 'formSheet' ||
+    presentation === 'pageSheet'
   )
 }
 function NativeOverlays({
@@ -718,9 +626,14 @@ function NativeOverlays({
         target: item.entry.key,
         closing,
       })
-    if (!options.presentation || options.presentation === 'formSheet') {
+    const presentation = options.presentation
+    const usePageSheet =
+      presentation === 'pageSheet' ||
+      (presentation === 'modal' && Platform.OS === 'ios' && !options.modal)
+    if (!presentation || presentation === 'formSheet' || usePageSheet) {
+      const Sheet = usePageSheet ? PageSheet : FormSheet
       return (
-        <FormSheet
+        <Sheet
           key={item.key}
           {...options.sheet}
           isOpen={!!active}
@@ -737,41 +650,51 @@ function NativeOverlays({
           onNativeDismissPrevented={requestClose}
         >
           {content}
-        </FormSheet>
+        </Sheet>
       )
     }
-    if (
-      options.presentation === 'containedModal' ||
-      options.presentation === 'containedTransparentModal'
-    ) {
+    const contained =
+      presentation === 'containedModal' ||
+      presentation === 'containedTransparentModal' ||
+      presentation === 'containedModalReplacingContent'
+    if (contained && Platform.OS === 'ios') {
+      const ContainedModal =
+        presentation === 'containedModalReplacingContent'
+          ? ContainedModalReplacingContent
+          : ContainedModalOverContent
       return (
-        <ContainedModalOverContent
+        <ContainedModal
           key={item.key}
           isOpen={!!active}
           targetContainerId="tanstack-root"
-          onDidDisappear={() => forget(item.key)}
+          onDidDisappear={() => {
+            if (!active) {
+              forget(item.key)
+            }
+          }}
           onPresentationRejected={requestClose}
         >
           {content}
-        </ContainedModalOverContent>
+        </ContainedModal>
       )
     }
+    const transparent =
+      presentation === 'transparentModal' ||
+      presentation === 'containedTransparentModal'
     return (
       <Modal
         key={item.key}
         {...options.modal}
         visible={!!active}
-        transparent={options.presentation === 'transparentModal'}
+        transparent={transparent}
         presentationStyle={
-          options.presentation === 'fullScreenModal'
-            ? 'fullScreen'
-            : options.presentation === 'transparentModal'
-              ? 'overFullScreen'
+          transparent
+            ? 'overFullScreen'
+            : contained || presentation === 'fullScreenModal'
+              ? 'fullScreen'
               : 'pageSheet'
         }
-        animationType={
-          options.presentation === 'transparentModal' ? 'fade' : 'slide'
-        }
+        animationType={transparent ? 'fade' : 'slide'}
         allowSwipeDismissal={!blocked}
         onRequestClose={requestClose}
         onShow={() => event('transitionEnd', false)}

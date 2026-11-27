@@ -76,9 +76,37 @@ that ownership when its layout effects reconnect.
 
 ## Native host reconciliation
 
-Screens v5 Stack, Tabs, FormSheet, and contained modal primitives provide native
-presentation. Other modal variants use React Native Modal. Drawer presentation
-currently uses a controlled sidebar; `renderContainer` can supply another host.
+Import `stack` from `@tanstack/react-router/stack`. The factory is also
+importable in shared route files for platform-specific configuration.
+Use it as the root router's `native` option or as a layout route's
+`staticData.native.navigator`. Routes without a stack navigator render directly.
+The default stack uses Screens v5 `Stack.Host` and `Stack.Screen`. A stack with
+custom presentation needs can supply a `presenter` to `stack`.
+
+```tsx
+import { stack } from '@tanstack/react-router/stack'
+
+const navigator = stack({ initialRoute: '/settings/profile' })
+// Set staticData.native.navigator to navigator on the settings layout.
+```
+
+Set `stackHost` on the navigator to pass `colorScheme` and
+`direction` to Screens. Route headers use Screens' `Stack.HeaderConfig` props.
+When a host is the direct stack child of an iOS Screens split column, Screens
+automatically opts into its native column navigation.
+
+Registered overlay containers use Screens `FormSheet` by default.
+`presentation: 'pageSheet'` opts into Screens `PageSheet`: UIKit presents a page
+sheet on iOS, and Android presents a bottom sheet. Plain `'modal'` also uses
+`PageSheet` on iOS unless the route supplies React Native `modal` props. On iOS,
+`'containedModalReplacingContent'` hides the provider's content until dismissal;
+`'containedModal'` and `'containedTransparentModal'` continue to overlay it.
+Android uses a React Native modal for contained presentations. Ordinary stack
+entries are pushed; custom stack renderers can interpret presentation options for
+their own entries.
+
+Drawer presentation uses a controlled sidebar. Use `renderContainer` to supply
+another host.
 
 Programmatic Back requests native detachment, then retains the outgoing React
 view until the host confirms dismissal. Native Back is different: UIKit has

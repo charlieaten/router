@@ -68,6 +68,16 @@
         "default": "./dist/cjs/index.cjs"
       }
     },
+    "./stack": {
+      "react-native": {
+        "types": "./dist/native/esm/stack.native.d.ts",
+        "default": "./dist/native/esm/stack.native.js"
+      },
+      "import": {
+        "types": "./dist/native/esm/stack.native.d.ts",
+        "default": "./dist/native/esm/stack.native.js"
+      }
+    },
     "./ssr/server": {
       "import": {
         "types": "./dist/esm/ssr/server.d.ts",
@@ -125,7 +135,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-native": "0.88.1",
-    "react-native-screens": "5.0.0-beta.1",
+    "react-native-screens": "5.0.0-beta.2",
     "rimraf": "catalog:",
     "vite": "*",
     "vitest": "catalog:",
@@ -135,7 +145,7 @@
     "react": ">=18.0.0 || >=19.0.0",
     "react-dom": ">=18.0.0 || >=19.0.0",
     "react-native": ">=0.84.0",
-    "react-native-screens": ">=5.0.0-beta.1"
+    "react-native-screens": ">=5.0.0-beta.2"
   },
   "peerDependenciesMeta": {
     "react-native": {

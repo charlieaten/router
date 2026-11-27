@@ -5,6 +5,6 @@
     "types": ["node", "react"],
     "customConditions": ["react-native"]
   },
-  "include": ["src/index.native.tsx"],
+  "include": ["src/index.native.tsx", "src/stack.native.ts"],
   "exclude": []
 }

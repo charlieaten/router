@@ -15,7 +15,10 @@ export default defineConfig({
     emptyOutDir: true,
     minify: false,
     sourcemap: true,
-    lib: { entry: './src/index.native.tsx', formats: ['es'] },
+    lib: {
+      entry: ['./src/index.native.tsx', './src/stack.native.ts'],
+      formats: ['es'],
+    },
     rolldownOptions: {
       external: (id) =>
         !id.startsWith('.') && !id.startsWith('\0') && !path.isAbsolute(id),
